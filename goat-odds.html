@@ -1,0 +1,716 @@
+<title>Goat Duel Odds</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap">
+<style>
+/* Layout: two-pane duel desk. Left = action log you drive, right = live read on hidden cards. Stacks on phones. */
+:root{
+  --bg:#eaeef3; --panel:#fbfcfd; --sunk:#f1f4f8; --ink:#17202c; --muted:#596476; --line:#d2d9e3;
+  --accent:#9a6a0c; --accent-ink:#ffffff; --bar:#e1e6ed;
+  --mon:#b45d1d; --spl:#0e7c66; --trp:#9a2b72;
+  --bad:#b2352c; --warn:#a86a00; --good:#2b7643;
+  --f-display:"Saira Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#11151c; --panel:#181e27; --sunk:#141920; --ink:#e5e9ef; --muted:#97a2b4; --line:#2a3240;
+  --accent:#d9a640; --accent-ink:#1a1407; --bar:#262e3b;
+  --mon:#e38d4f; --spl:#34b597; --trp:#d561ab;
+  --bad:#ef7468; --warn:#e3a53c; --good:#62c387; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151c; --panel:#181e27; --sunk:#141920; --ink:#e5e9ef; --muted:#97a2b4; --line:#2a3240;
+  --accent:#d9a640; --accent-ink:#1a1407; --bar:#262e3b;
+  --mon:#e38d4f; --spl:#34b597; --trp:#d561ab;
+  --bad:#ef7468; --warn:#e3a53c; --good:#62c387; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body)}
+.wrap{max-width:1320px;margin:0 auto;padding-block:18px 56px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin-bottom:16px}
+h1{font:700 30px/1 var(--f-display);letter-spacing:.01em;margin:0;text-wrap:balance}
+h1 small{display:block;font:400 13px/1.4 var(--f-body);color:var(--muted);letter-spacing:0;margin-top:6px;max-width:60ch}
+h2{font:600 17px/1.2 var(--f-display);text-transform:uppercase;letter-spacing:.07em;margin:0 0 10px;color:var(--ink)}
+h3{font:600 12px/1.2 var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:14px 0 8px}
+.status{display:flex;flex-wrap:wrap;gap:6px}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;min-width:74px}
+.stat b{display:block;font:500 20px/1.1 var(--f-mono);font-variant-numeric:tabular-nums}
+.stat span{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.grid{display:grid;grid-template-columns:minmax(0,390px) minmax(0,1fr);gap:18px;align-items:start}
+@media (max-width:920px){.grid{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:6px}
+.btn{font:500 13px/1.2 var(--f-body);border:1px solid var(--line);background:var(--sunk);color:var(--ink);border-radius:6px;padding:7px 10px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{font-size:12px;padding:4px 7px}
+.btn kbd{font:500 10px var(--f-mono);opacity:.65;margin-left:4px}
+input[type=text],textarea,select,input[type=number]{font:14px var(--f-body);color:var(--ink);background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+textarea{font:12.5px/1.5 var(--f-mono);min-height:240px;resize:vertical}
+.cardbox{display:flex;gap:6px;margin-bottom:8px}
+.hint{font-size:12px;color:var(--muted);margin:6px 0 0}
+.sep{border:0;border-top:1px solid var(--line);margin:12px 0}
+.slider{display:flex;align-items:center;gap:10px;font-size:13px}
+.slider input{flex:1;accent-color:var(--accent)}
+.slider output{font:500 13px var(--f-mono);min-width:3.5ch;text-align:right}
+.banner{background:var(--sunk);border:1px dashed var(--accent);border-radius:8px;padding:10px 12px;font-size:13px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+.err{border:1px solid var(--bad);color:var(--bad);border-radius:8px;padding:10px 12px;font-size:13px;background:var(--panel)}
+.threats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.threat{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.threat .lbl{font-size:12px;color:var(--muted);min-height:2.6em}
+.threat .val{font:500 26px/1.1 var(--f-mono);font-variant-numeric:tabular-nums}
+.threat .bar{margin-top:6px}
+.sev-hi{color:var(--bad)} .sev-mid{color:var(--warn)} .sev-lo{color:var(--good)}
+.sets{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.slot{border:1px solid var(--line);border-radius:8px;background:var(--sunk);padding:10px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.slot-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.slot-head b{font:600 15px var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.slot-head span{font-size:11px;color:var(--muted)}
+.facedown{display:inline-block;width:14px;height:19px;border-radius:2px;margin-right:6px;vertical-align:-4px;background:linear-gradient(135deg,var(--mon),var(--accent))}
+.slot.st .facedown{background:linear-gradient(135deg,var(--spl),var(--trp))}
+.chips{display:flex;flex-wrap:wrap;gap:4px}
+.chip{font-size:11px;border:1px solid var(--line);border-radius:999px;padding:2px 8px;background:var(--panel);color:var(--muted);cursor:pointer}
+.chip:hover{border-color:var(--bad);color:var(--bad)}
+.cands{display:flex;flex-direction:column;gap:5px}
+.cand{display:grid;grid-template-columns:minmax(0,1fr) 46px;gap:2px 8px;align-items:center;font-size:13px}
+.cand .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cand .pc{font:500 12.5px var(--f-mono);text-align:right;font-variant-numeric:tabular-nums}
+.cand .bar{grid-column:1/-1}
+.bar{height:5px;background:var(--bar);border-radius:3px;overflow:hidden}
+.bar>i{display:block;height:100%;background:currentColor;border-radius:3px}
+.t-M{color:var(--mon)} .t-S{color:var(--spl)} .t-T{color:var(--trp)}
+.pip{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px;background:currentColor;vertical-align:1px}
+.nm .txt{color:var(--ink)}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.tablewrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+td.n,th.n{text-align:right;font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+td.dim{color:var(--muted)}
+.log{list-style:none;margin:0;padding:0;max-height:300px;overflow:auto;font-size:12.5px}
+.log li{padding:5px 0;border-bottom:1px solid var(--line);display:grid;grid-template-columns:34px minmax(0,1fr);gap:6px}
+.log li span{font:500 11px var(--f-mono);color:var(--muted);padding-top:1px}
+details>summary{cursor:pointer;font:600 15px var(--f-display);text-transform:uppercase;letter-spacing:.07em;list-style-position:outside}
+details[open]>summary{margin-bottom:10px}
+.mini select,.mini input{padding:3px 6px;font-size:12px;width:auto}
+.mini input{width:64px}
+.flag{color:var(--warn);font-size:11px;margin-left:6px}
+.meta{font-size:12px;color:var(--muted)}
+.prose{max-width:68ch;font-size:13.5px}
+.prose p{margin:0 0 8px}
+.empty{font-size:13px;color:var(--muted);padding:6px 0}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:8px;font-size:13px;max-width:min(520px,calc(100% - 32px));z-index:20;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+@media (prefers-reduced-motion:no-preference){.bar>i{transition:width .25s ease}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Goat Duel Odds<small>Log what your opponent does on DuelingBook. The odds for every face-down card, their hand and their next draw update after each action.</small></h1>
+    <div class="status" id="status"></div>
+  </header>
+
+  <div class="grid">
+    <div class="col">
+      <section class="panel" aria-labelledby="h-act">
+        <h2 id="h-act">Opponent did</h2>
+        <div class="row">
+          <button class="btn primary" data-a="draw" id="b-draw">Draw<kbd>D</kbd></button>
+          <button class="btn" data-a="draw5" id="b-draw5">Draw opening 5</button>
+          <button class="btn" data-a="setst" id="b-setst">Set spell/trap<kbd>S</kbd></button>
+          <button class="btn" data-a="setmon" id="b-setmon">Set monster<kbd>M</kbd></button>
+          <button class="btn" data-a="endturn" id="b-end">End turn<kbd>E</kbd></button>
+        </div>
+        <h3>With a named card</h3>
+        <div class="cardbox">
+          <input type="text" id="card" list="cardlist" placeholder="Card name, e.g. Pot of Greed or pog" autocomplete="off">
+          <datalist id="cardlist"></datalist>
+        </div>
+        <div class="row">
+          <button class="btn" data-a="play" id="b-play">Played or discarded it from hand</button>
+          <button class="btn" data-a="search" id="b-search">Added it to hand from deck</button>
+          <button class="btn" data-a="deckpub" id="b-deckpub">Sent it from deck to GY</button>
+          <button class="btn" data-a="pubhand" id="b-pubhand">Returned it from GY or field to hand</button>
+          <button class="btn" data-a="pubdeck" id="b-pubdeck">Shuffled it from GY or field into deck</button>
+          <button class="btn" data-a="khdeck" id="b-khdeck">Shuffled it from hand into deck</button>
+        </div>
+        <p class="hint">Revealed set cards are logged on each face-down card on the right. Short names like mst, bls, bom, coth and tt work.</p>
+        <hr class="sep">
+        <h3>Hand size fix</h3>
+        <div class="row">
+          <button class="btn small" data-a="hminus" id="b-hminus">One fewer card in hand</button>
+          <button class="btn small" data-a="hplus" id="b-hplus">One more card in hand</button>
+        </div>
+        <p class="hint">Use these if the hand count here drifts from the count on DuelingBook.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-ev">
+        <h2 id="h-ev">What they didn't do</h2>
+        <div class="slider"><label for="strength">How sure they'd have used it</label><input type="range" id="strength" min="10" max="100" step="5" value="80"><output id="strength-out">80%</output></div>
+        <h3>Their face-down spells and traps</h3>
+        <div class="row">
+          <button class="btn" data-a="ev-atk" id="b-evatk">I attacked, no response</button>
+          <button class="btn" data-a="ev-sum" id="b-evsum">I summoned, no response</button>
+          <button class="btn" data-a="ev-neg" id="b-evneg">My card resolved, no negation</button>
+        </div>
+        <h3>Their hand</h3>
+        <div class="row">
+          <button class="btn" data-a="ev-rem" id="b-evrem">Left my backrow alone</button>
+          <button class="btn" data-a="ev-mrem" id="b-evmrem">Didn't remove my monster</button>
+          <button class="btn" data-a="ev-hand" id="b-evhand">Could have summoned Chaos, didn't</button>
+        </div>
+        <p class="hint">Each press lowers the odds of matching cards in that spot. Click an evidence tag on a face-down card to remove it.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="h-log">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+          <h2 id="h-log" style="margin:0">Duel log</h2>
+          <div class="row"><button class="btn small" data-a="undo" id="b-undo">Undo<kbd>Z</kbd></button><button class="btn small" data-a="newduel" id="b-new">New duel</button></div>
+        </div>
+        <ul class="log" id="log"></ul>
+      </section>
+    </div>
+
+    <div class="col">
+      <div id="banner"></div>
+      <section class="panel" aria-labelledby="h-th">
+        <h2 id="h-th">At a glance</h2>
+        <div class="threats" id="threats"></div>
+        <p class="meta" id="simmeta" style="margin:10px 0 0"></p>
+      </section>
+      <section class="panel" aria-labelledby="h-fd">
+        <h2 id="h-fd">Face-down cards</h2>
+        <div class="sets" id="sets"></div>
+      </section>
+      <div class="two">
+        <section class="panel" aria-labelledby="h-hand">
+          <h2 id="h-hand">Their hand</h2>
+          <div id="hand"></div>
+        </section>
+        <section class="panel" aria-labelledby="h-next">
+          <h2 id="h-next">Their next draw</h2>
+          <div id="next"></div>
+        </section>
+      </div>
+      <section class="panel">
+        <details id="d-all"><summary>Every card in their list</summary><div class="tablewrap" id="alltable"></div></details>
+      </section>
+      <section class="panel">
+        <details id="d-deck"><summary>Opponent decklist</summary>
+          <p class="hint" style="margin-top:0">Paste a list with one card per line, like <code>3 Book of Moon</code> or <code>Book of Moon x3</code>. Lines after an Extra Deck or Side Deck heading are skipped. Loading a list starts a new duel.</p>
+          <textarea id="decktext" spellcheck="false"></textarea>
+          <div class="row" style="margin:8px 0 12px"><button class="btn primary" data-a="loaddeck" id="b-load">Load list and start a new duel</button><button class="btn" data-a="sampledeck" id="b-sample">Paste the sample list</button></div>
+          <h3>Card details</h3>
+          <p class="hint" style="margin-top:0">"Set chance" is how readily a player sets this card face-down instead of playing it. Cards marked "not recognized" need a type picked.</p>
+          <div class="tablewrap mini" id="decktable"></div>
+        </details>
+      </section>
+      <section class="panel prose">
+        <details id="d-how"><summary>How the odds are worked out</summary>
+          <p>Every card in their list that you have not seen is equally likely to be anywhere hidden: in their hand, face-down on the field, or in their deck. That alone gives the standard draw odds.</p>
+          <p>Face-down cards add rules. A set monster has to be a monster, and a set spell/trap has to be a spell or trap. Players also choose what they set, so traps are weighted as likely sets while cards like Pot of Greed are not. Each "no response" you log lowers the weight of cards that would have answered.</p>
+          <p>The page then simulates 30,000 deals of their unseen cards that fit everything you logged, weights each deal by how well it fits, and reports the share where each card lands in each spot. Only information visible to both players goes in.</p>
+          <p>Known limits: it does not model what a player would choose to discard or keep. When a card leaves their hand face-down, it treats it as the most recently drawn card for hand evidence purposes.</p>
+        </details>
+      </section>
+    </div>
+  </div>
+</div>
+<div id="toast" hidden></div>
+
+<script>
+"use strict";
+// ---------- Format settings ----------
+const FMT = {
+  sampleName:"Goat Control",
+  handTag:"chaos", handTile:"Hand holds BLS or Chaos Sorcerer",
+  example:{play:"Pot of Greed", draws:2, banish:null, reveal:"Mystical Space Typhoon"}
+};
+// ---------- Card data: [type, set chance, tags] ----------
+// Types: M monster, Sn normal spell, Sq quick-play, Sc continuous/equip/field, T trap
+// Tags: atk stops attacks, sum answers summons, rem S/T removal, mrem monster removal, neg negation, chaos Chaos monster, draw advantage
+const DB = {
+  "Black Luster Soldier - Envoy of the Beginning":["M",0,["chaos","mrem"]],
+  "Chaos Sorcerer":["M",0,["chaos","mrem"]],
+  "Breaker the Magical Warrior":["M",0.15,["rem"]],
+  "Tribe-Infecting Virus":["M",0.3,["mrem"]],
+  "Jinzo":["M",0.05,[]],
+  "Sinister Serpent":["M",0.4,[]],
+  "Sangan":["M",0.9,[]],
+  "Magician of Faith":["M",1,[]],
+  "Tsukuyomi":["M",0.15,[]],
+  "Airknight Parshath":["M",0.05,[]],
+  "Morphing Jar":["M",1,[]],
+  "D.D. Warrior Lady":["M",0.5,["mrem"]],
+  "Exiled Force":["M",0.3,["mrem"]],
+  "Spirit Reaper":["M",0.6,[]],
+  "Kycoo the Ghost Destroyer":["M",0.3,[]],
+  "Night Assailant":["M",1,["mrem"]],
+  "Abyss Soldier":["M",0.2,["mrem"]],
+  "Mystic Swordsman LV2":["M",0.4,[]],
+  "Asura Priest":["M",0,[]],
+  "Don Zaloog":["M",0.1,[]],
+  "Dekoichi the Battlechanted Locomotive":["M",0.9,["draw"]],
+  "Shining Angel":["M",0.6,[]],
+  "Mystic Tomato":["M",0.5,[]],
+  "Thestalos the Firestorm Monarch":["M",0.1,[]],
+  "Zaborg the Thunder Monarch":["M",0.1,["mrem"]],
+  "Gravekeeper's Spy":["M",1,[]],
+  "Penguin Soldier":["M",1,["mrem"]],
+  "Old Vindictive Magician":["M",1,["mrem"]],
+  "Nimble Momonga":["M",0.7,[]],
+  "Apprentice Magician":["M",1,[]],
+  "Twin-Headed Behemoth":["M",0.3,[]],
+  "Marauding Captain":["M",0.1,[]],
+  "Pot of Greed":["Sn",0.05,["draw"]],
+  "Graceful Charity":["Sn",0.05,["draw"]],
+  "Heavy Storm":["Sn",0.05,["rem"]],
+  "Mystical Space Typhoon":["Sq",0.5,["rem"]],
+  "Snatch Steal":["Sc",0.05,["mrem"]],
+  "Delinquent Duo":["Sn",0.05,[]],
+  "Premature Burial":["Sc",0.1,[]],
+  "Nobleman of Crossout":["Sn",0.05,["mrem"]],
+  "Book of Moon":["Sq",0.7,["atk","sum"]],
+  "Scapegoat":["Sq",0.95,["atk"]],
+  "Metamorphosis":["Sq",0.3,[]],
+  "Smashing Ground":["Sn",0.05,["mrem"]],
+  "Swords of Revealing Light":["Sn",0.1,[]],
+  "Enemy Controller":["Sq",0.6,["atk","mrem"]],
+  "Confiscation":["Sn",0.05,[]],
+  "Upstart Goblin":["Sn",0.05,["draw"]],
+  "Reinforcement of the Army":["Sn",0.05,[]],
+  "Painful Choice":["Sn",0.05,[]],
+  "Card Destruction":["Sn",0.05,[]],
+  "Creature Swap":["Sn",0.05,[]],
+  "Lightning Vortex":["Sn",0.05,["mrem"]],
+  "Fissure":["Sn",0.05,["mrem"]],
+  "Tribute to the Doomed":["Sn",0.05,["mrem"]],
+  "Mirage of Nightmare":["Sc",0.2,["draw"]],
+  "Shrink":["Sq",0.6,["atk"]],
+  "Rush Recklessly":["Sq",0.5,["atk"]],
+  "Messenger of Peace":["Sc",0.2,[]],
+  "Sakuretsu Armor":["T",1,["atk"]],
+  "Mirror Force":["T",1,["atk"]],
+  "Torrential Tribute":["T",1,["sum"]],
+  "Bottomless Trap Hole":["T",1,["sum"]],
+  "Trap Hole":["T",1,["sum"]],
+  "Ring of Destruction":["T",1,["atk","sum","mrem"]],
+  "Call of the Haunted":["T",1,[]],
+  "Solemn Judgment":["T",1,["sum","neg"]],
+  "Magic Cylinder":["T",1,["atk"]],
+  "Waboku":["T",1,["atk"]],
+  "Negate Attack":["T",1,["atk"]],
+  "Dust Tornado":["T",1,["rem"]],
+  "Magic Jammer":["T",1,["neg"]],
+  "Seven Tools of the Bandit":["T",1,["neg"]],
+  "Spell Shield Type-8":["T",1,["neg"]],
+  "Royal Decree":["T",1,[]],
+  "Return from the Different Dimension":["T",1,[]],
+  "Ceasefire":["T",1,[]],
+  "Reckless Greed":["T",1,["draw"]],
+  "Threatening Roar":["T",1,["atk"]],
+  "Draining Shield":["T",1,["atk"]],
+  "Compulsory Evacuation Device":["T",1,["atk","sum","mrem"]],
+  "Raigeki Break":["T",1,["atk","mrem"]],
+  "Phoenix Wing Wind Blast":["T",1,["atk","mrem"]],
+  "Ojama Trio":["T",1,[]]
+};
+const ALIAS = {bls:"Black Luster Soldier - Envoy of the Beginning",envoy:"Black Luster Soldier - Envoy of the Beginning",cs:"Chaos Sorcerer",sorc:"Chaos Sorcerer",tiv:"Tribe-Infecting Virus",mof:"Magician of Faith",tsuku:"Tsukuyomi",airknight:"Airknight Parshath",jar:"Morphing Jar",ddwl:"D.D. Warrior Lady",pog:"Pot of Greed",gc:"Graceful Charity",charity:"Graceful Charity",hs:"Heavy Storm",mst:"Mystical Space Typhoon",ss:"Snatch Steal",duo:"Delinquent Duo",preme:"Premature Burial",pb:"Premature Burial",noble:"Nobleman of Crossout",bom:"Book of Moon",goat:"Scapegoat",goats:"Scapegoat",meta:"Metamorphosis",ec:"Enemy Controller",sak:"Sakuretsu Armor",saku:"Sakuretsu Armor",mf:"Mirror Force",tt:"Torrential Tribute",torrential:"Torrential Tribute",bth:"Bottomless Trap Hole",rod:"Ring of Destruction",ring:"Ring of Destruction",coth:"Call of the Haunted",solemn:"Solemn Judgment",swords:"Swords of Revealing Light",sorl:"Swords of Revealing Light",reaper:"Spirit Reaper",serpent:"Sinister Serpent",breaker:"Breaker the Magical Warrior",ter:"Thousand-Eyes Restrict"};
+const SAMPLE = `# Goat Control, sample list. Edit it to match your opponent.
+1 Black Luster Soldier - Envoy of the Beginning
+1 Chaos Sorcerer
+1 Breaker the Magical Warrior
+1 Tribe-Infecting Virus
+1 Jinzo
+1 Sinister Serpent
+1 Sangan
+1 Magician of Faith
+2 Tsukuyomi
+2 Airknight Parshath
+1 Morphing Jar
+1 D.D. Warrior Lady
+1 Spirit Reaper
+1 Kycoo the Ghost Destroyer
+1 Pot of Greed
+1 Graceful Charity
+1 Heavy Storm
+1 Mystical Space Typhoon
+1 Snatch Steal
+1 Delinquent Duo
+1 Premature Burial
+1 Nobleman of Crossout
+3 Book of Moon
+2 Scapegoat
+2 Metamorphosis
+1 Smashing Ground
+1 Enemy Controller
+2 Sakuretsu Armor
+1 Mirror Force
+1 Torrential Tribute
+1 Call of the Haunted
+1 Ring of Destruction
+1 Solemn Judgment
+
+Extra Deck
+1 Thousand-Eyes Restrict`;
+const DEFAULT_SETW = {M:0.5,Sn:0.05,Sq:0.6,Sc:0.1,T:1};
+const TYPE_NAME = {M:"Monster",Sn:"Normal spell",Sq:"Quick-play spell",Sc:"Cont./equip spell",T:"Trap"};
+const EV_TEXT = {atk:"Ignored an attack",sum:"Ignored a summon",neg:"Let a card resolve",rem:"Held off S/T removal",mrem:"Held off monster removal",chaos:"Skipped a Chaos summon",hatk:"No hand trap on attack"};
+const STORE_KEY = "goat-duel-odds-v1";
+const N_SAMPLES = 30000;
+
+const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g,"");
+const DBN = {}; for (const n in DB) DBN[norm(n)] = n;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const tcls = t => "t-" + t[0];
+const $ = id => document.getElementById(id);
+
+function makeEntry(name, count){
+  const canon = DBN[norm(name)];
+  if (canon){ const [type,setW,tags] = DB[canon]; return {name:canon,count,type,setW,tags:tags.slice(),known:true}; }
+  return {name:name.trim(),count,type:"M",setW:DEFAULT_SETW.M,tags:[],known:false};
+}
+function parseDeck(text){
+  const out = []; const idx = {}; let skip = false;
+  for (const raw of text.split(/\r?\n/)){
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("//")) continue;
+    const h = line.toLowerCase().replace(/[:=\-\s]+$/,"").replace(/^[#=\-\s]+/,"");
+    if (/^(extra|side)(\s*deck)?(\s*\(\d+\))?$/.test(h)){ skip = true; continue; }
+    if (/^main(\s*deck)?(\s*\(\d+\))?$/.test(h)){ skip = false; continue; }
+    if (/^(monsters?|spells?|traps?|monster cards|spell cards|trap cards)(\s*\(\d+\))?$/.test(h)) continue;
+    if (skip) continue;
+    let m, count = 1, name = line;
+    if ((m = line.match(/^(\d+)\s*[xX]?\s+(.+)$/))){ count = +m[1]; name = m[2]; }
+    else if ((m = line.match(/^(.+?)\s*[xX]\s*(\d+)$/))){ count = +m[2]; name = m[1]; }
+    name = name.trim(); if (!name || count < 1) continue;
+    const e = makeEntry(name, count); const k = norm(e.name);
+    if (idx[k] !== undefined) out[idx[k]].count += count; else { idx[k] = out.length; out.push(e); }
+  }
+  return out;
+}
+
+// ---------- State ----------
+let S, history = [], lastRes = null;
+function blank(deck){ return {deck, pub:{}, kh:{}, hand:[], sets:[], log:[], turn:1, nid:1, nst:0, nmon:0, example:false, deckText:null}; }
+function save(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify({S, history:history.slice(-60)})); }catch(e){} }
+function load(){
+  try{ const raw = localStorage.getItem(STORE_KEY); if (!raw) return false; const d = JSON.parse(raw); if (!d || !d.S || !Array.isArray(d.S.deck)) return false; S = d.S; history = d.history || []; return true; }catch(e){ return false; }
+}
+function snapshot(){ history.push(JSON.stringify(S)); if (history.length > 200) history.shift(); }
+function log(msg){ S.log.push({t:S.turn, msg}); }
+function toast(msg){ const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast._h); toast._h = setTimeout(()=>{ t.hidden = true; }, 3200); }
+function strength(){ return (+$("strength").value)/100; }
+
+function deckIndex(name){ return S.deck.findIndex(e => e.name === name); }
+function resolveName(input){
+  const n = norm(input); if (!n) return null;
+  let e = S.deck.find(x => norm(x.name) === n); if (e) return e.name;
+  if (ALIAS[n]){ e = S.deck.find(x => x.name === ALIAS[n]); if (e) return e.name; }
+  const hits = S.deck.filter(x => norm(x.name).includes(n));
+  if (hits.length === 1) return hits[0].name;
+  return null;
+}
+function poolCount(name){ const e = S.deck[deckIndex(name)]; return e ? e.count - (S.pub[name]||0) - (S.kh[name]||0) : 0; }
+function hiddenTotal(){ let P = 0; for (const e of S.deck) P += Math.max(0, e.count - (S.pub[e.name]||0) - (S.kh[e.name]||0)); return P; }
+function deckSize(){ return hiddenTotal() - S.hand.length - S.sets.length; }
+function khTotal(){ let n = 0; for (const k in S.kh) n += S.kh[k]; return n; }
+const inc = (o,k,d) => { o[k] = (o[k]||0) + d; if (o[k] <= 0) delete o[k]; };
+
+// ---------- Actions ----------
+function needCard(){
+  const v = $("card").value; const name = resolveName(v);
+  if (!v.trim()){ toast("Type a card name in the card box first."); return null; }
+  if (!name){ toast(`"${v}" doesn't match one card in their decklist. Add it to the list or type more of the name.`); return null; }
+  return name;
+}
+function drawOne(){ S.hand.push({id:S.nid++, ev:[]}); }
+function takeFromHand(name){
+  if (name && (S.kh[name]||0) > 0){ inc(S.kh,name,-1); return true; }
+  if (S.hand.length){ S.hand.pop(); return true; }
+  return false;
+}
+const ACTIONS = {
+  draw(){ if (deckSize() < 1) return toast("Their deck is empty by this count."); snapshot(); drawOne(); log("Drew a card."); },
+  draw5(){ if (deckSize() < 5) return toast("Not enough cards left in their deck."); snapshot(); for (let i=0;i<5;i++) drawOne(); log("Drew 5 cards."); },
+  setst(){ if (!S.hand.length) return toast("No unseen cards in their hand to set."); snapshot(); S.hand.pop(); S.nst++; S.sets.push({id:S.nid++, zone:"st", label:"Spell/trap " + S.nst, turn:S.turn, ev:[]}); log("Set a spell/trap."); },
+  setmon(){ if (!S.hand.length) return toast("No unseen cards in their hand to set."); snapshot(); S.hand.pop(); S.nmon++; S.sets.push({id:S.nid++, zone:"mon", label:"Monster " + S.nmon, turn:S.turn, ev:[]}); log("Set a monster."); },
+  endturn(){ snapshot(); log(`Turn ${S.turn} ended.`); S.turn++; },
+  play(){ const n = needCard(); if (!n) return;
+    if (!(S.kh[n] > 0) && poolCount(n) < 1) return toast(`Every copy of ${n} is already accounted for. Check the decklist.`);
+    if (!(S.kh[n] > 0) && !S.hand.length) return toast("Their hand has no unseen cards left.");
+    snapshot(); takeFromHand(n); inc(S.pub,n,1); log(`Played or discarded ${n} from hand.`); },
+  search(){ const n = needCard(); if (!n) return; if (poolCount(n) < 1) return toast(`No unseen copies of ${n} are left.`); if (deckSize() < 1) return toast("Their deck is empty by this count.");
+    snapshot(); inc(S.kh,n,1); log(`Added ${n} from deck to hand.`); },
+  deckpub(){ const n = needCard(); if (!n) return; if (poolCount(n) < 1) return toast(`No unseen copies of ${n} are left.`); if (deckSize() < 1) return toast("Their deck is empty by this count.");
+    snapshot(); inc(S.pub,n,1); log(`Sent ${n} from deck to the graveyard.`); },
+  pubhand(){ const n = needCard(); if (!n) return; if (!(S.pub[n] > 0)) return toast(`No copy of ${n} has been logged as face-up or in the graveyard.`);
+    snapshot(); inc(S.pub,n,-1); inc(S.kh,n,1); log(`Returned ${n} to hand.`); },
+  pubdeck(){ const n = needCard(); if (!n) return; if (!(S.pub[n] > 0)) return toast(`No copy of ${n} has been logged as face-up or in the graveyard.`);
+    snapshot(); inc(S.pub,n,-1); log(`Shuffled ${n} into the deck.`); },
+  khdeck(){ const n = needCard(); if (!n) return; if (!(S.kh[n] > 0)) return toast(`${n} isn't logged as a known card in their hand.`);
+    snapshot(); inc(S.kh,n,-1); log(`Shuffled ${n} from hand into the deck.`); },
+  hplus(){ if (deckSize() < 1) return toast("Their deck is empty by this count."); snapshot(); drawOne(); log("Hand count corrected up by one."); },
+  hminus(){ if (!S.hand.length) return toast("No unseen cards in their hand."); snapshot(); S.hand.pop(); log("Hand count corrected down by one. The card went back to the deck."); },
+  undo(){ if (!history.length) return toast("Nothing to undo."); S = JSON.parse(history.pop()); syncDeckUI(); toast("Undone."); },
+  newduel(){ snapshot(); const d = S.deck, dt = S.deckText; S = blank(d); S.deckText = dt; log("New duel started."); toast("New duel. Press Draw opening 5 when they draw."); },
+  loaddeck(){ const txt = $("decktext").value; const d = parseDeck(txt); const total = d.reduce((a,e)=>a+e.count,0);
+    if (!d.length) return toast("No cards found in that list.");
+    snapshot(); S = blank(d); S.deckText = txt; log(`Loaded a ${total}-card list. New duel started.`); syncDeckUI();
+    const unk = d.filter(e=>!e.known).length;
+    toast(`Loaded ${total} cards.` + (unk ? ` ${unk} not recognized; set their type below.` : "") + (total !== 40 ? " The main deck isn't 40 cards; check the list." : "")); },
+  sampledeck(){ $("decktext").value = SAMPLE; toast("Sample list pasted. Press Load to use it."); },
+};
+function globalEv(zoneOrHand, tag){
+  const s = strength();
+  if (zoneOrHand === "hand"){
+    if (!S.hand.length) return toast("Their hand has no unseen cards.");
+    snapshot(); S.hand.forEach(h => h.ev.push({kind:"tag", tag, s})); log(`${EV_TEXT[tag]} (hand, ${Math.round(s*100)}% sure).`);
+  } else {
+    const st = S.sets.filter(x => x.zone === "st");
+    if (!st.length) return toast("They have no face-down spells or traps.");
+    snapshot(); st.forEach(x => x.ev.push({kind:"tag", tag, s})); log(`${EV_TEXT[tag]} (backrow, ${Math.round(s*100)}% sure).`);
+  }
+}
+ACTIONS["ev-atk"] = () => globalEv("st","atk");
+ACTIONS["ev-sum"] = () => globalEv("st","sum");
+ACTIONS["ev-neg"] = () => globalEv("st","neg");
+ACTIONS["ev-rem"] = () => globalEv("hand","rem");
+ACTIONS["ev-mrem"] = () => globalEv("hand","mrem");
+ACTIONS["ev-hand"] = () => globalEv("hand",FMT.handTag);
+
+function slotAction(act, id, extra){
+  const i = S.sets.findIndex(x => x.id === id); if (i < 0) return;
+  const slot = S.sets[i];
+  if (act === "reveal"){
+    const n = needCard(); if (!n) return;
+    if (poolCount(n) < 1) return toast(`Every copy of ${n} is already accounted for.`);
+    const e = S.deck[deckIndex(n)];
+    if ((slot.zone === "mon") !== (e.type === "M")) return toast(`${n} can't be in that zone. Check the card name.`);
+    snapshot(); S.sets.splice(i,1); inc(S.pub,n,1); log(`${slot.label} was ${n}.`);
+  } else if (act === "notcard"){
+    const n = needCard(); if (!n) return;
+    snapshot(); slot.ev.push({kind:"card", name:n, s:strength()}); log(`${slot.label} is likely not ${n} (${Math.round(strength()*100)}% sure).`);
+  } else if (act === "atk" || act === "sum"){
+    snapshot(); slot.ev.push({kind:"tag", tag:act, s:strength()}); log(`${slot.label}: ${EV_TEXT[act].toLowerCase()}.`);
+  } else if (act === "tohand"){
+    snapshot(); S.sets.splice(i,1); S.hand.push({id:S.nid++, ev:slot.ev.concat([{kind:"wasSet", zone:slot.zone}])}); log(`${slot.label} went back to hand unseen.`);
+  } else if (act === "rmev"){
+    snapshot(); slot.ev.splice(extra,1); log(`Removed a piece of evidence from ${slot.label}.`);
+  }
+  commit();
+}
+
+// ---------- Simulation ----------
+function zoneOK(zone, type){ return zone === "mon" ? type === "M" : type !== "M"; }
+function lik(ev, e){
+  if (ev.kind === "tag") return e.tags.includes(ev.tag) ? 1 - ev.s : 1;
+  if (ev.kind === "card") return e.name === ev.name ? 1 - ev.s : 1;
+  if (ev.kind === "wasSet") return zoneOK(ev.zone, e.type) ? e.setW : 0;
+  return 1;
+}
+function simulate(){
+  const deck = S.deck, K = deck.length;
+  const pool = new Int32Array(K); let P = 0; const over = [];
+  deck.forEach((e,k) => { const v = e.count - (S.pub[e.name]||0) - (S.kh[e.name]||0); if (v < 0) over.push(e.name); pool[k] = Math.max(0,v); P += pool[k]; });
+  const nS = S.sets.length, nH = S.hand.length;
+  const D = P - nS - nH;
+  if (D < 0) return {error:`Their hidden cards outnumber the unseen cards in the list by ${-D}. A card was probably logged twice, or the decklist is missing cards.`, over};
+  const setW = S.sets.map(sl => { const w = new Float64Array(K); deck.forEach((e,k) => { let v = zoneOK(sl.zone,e.type) ? e.setW : 0; for (const ev of sl.ev) v *= lik(ev,e); w[k] = v; }); return w; });
+  const handW = S.hand.map(h => { if (!h.ev.length) return null; const w = new Float64Array(K); deck.forEach((e,k) => { let v = 1; for (const ev of h.ev) v *= lik(ev,e); w[k] = v; }); return w; });
+  const nSlot = nS + nH, N = N_SAMPLES;
+  const assign = new Int16Array(N * Math.max(1,nSlot)); const logw = new Float64Array(N);
+  const cnt = new Int32Array(K);
+  const pickW = (w, Z) => { let u = Math.random()*Z, acc = 0, last = -1; for (let k=0;k<K;k++){ const m = cnt[k]*w[k]; if (m > 0){ last = k; acc += m; if (u < acc) return k; } } return last; };
+  const pickU = R => { let u = Math.floor(Math.random()*R); for (let k=0;k<K;k++){ if (u < cnt[k]) return k; u -= cnt[k]; } return -1; };
+  for (let i=0;i<N;i++){
+    cnt.set(pool); let R = P, lw = 0, ok = true; const off = i*nSlot;
+    for (let j=0;j<nSlot && ok;j++){
+      const w = j < nS ? setW[j] : handW[j-nS];
+      let k;
+      if (w){ let Z = 0; for (let q=0;q<K;q++) Z += cnt[q]*w[q]; if (Z <= 0){ ok = false; break; } k = pickW(w,Z); lw += Math.log(Z/R); }
+      else k = pickU(R);
+      if (k < 0){ ok = false; break; }
+      cnt[k]--; R--; assign[off+j] = k;
+    }
+    logw[i] = ok ? lw : -Infinity;
+  }
+  let mx = -Infinity; for (let i=0;i<N;i++) if (logw[i] > mx) mx = logw[i];
+  if (mx === -Infinity) return {error:"No arrangement of their unseen cards fits everything you logged. Lower the certainty on some evidence, remove a tag, or check the decklist.", over};
+  const tagArr = t => deck.map(e => e.tags.includes(t));
+  const T = {atk:tagArr("atk"), sum:tagArr("sum"), rem:tagArr("rem"), mrem:tagArr("mrem"), ht:tagArr(FMT.handTag)};
+  const khHas = t => deck.some((e,k) => T[t][k] && (S.kh[e.name]||0) > 0);
+  const kAny = {rem:khHas("rem"), mrem:khHas("mrem"), ht:khHas("ht")};
+  const setDist = S.sets.map(() => new Float64Array(K));
+  const handAny = new Float64Array(K), handExp = new Float64Array(K), setExp = new Float64Array(K), next = new Float64Array(K);
+  const th = {atk:0, sum:0, rem:0, mrem:0, ht:0};
+  const tally = new Int32Array(K), seen = new Uint8Array(K);
+  let W = 0, W2 = 0;
+  for (let i=0;i<N;i++){
+    if (logw[i] === -Infinity) continue;
+    const w = Math.exp(logw[i]-mx); W += w; W2 += w*w; const off = i*nSlot;
+    tally.fill(0); seen.fill(0);
+    let a = false, s = false, r = kAny.rem, m = kAny.mrem, c = kAny.ht;
+    for (let j=0;j<nS;j++){ const k = assign[off+j]; setDist[j][k] += w; setExp[k] += w; tally[k]++; if (S.sets[j].zone === "st"){ if (T.atk[k]) a = true; if (T.sum[k]) s = true; } }
+    for (let j=nS;j<nSlot;j++){ const k = assign[off+j]; handExp[k] += w; tally[k]++; if (!seen[k]){ seen[k] = 1; handAny[k] += w; } if (T.rem[k]) r = true; if (T.mrem[k]) m = true; if (T.ht[k]) c = true; }
+    if (D > 0){ const rem = P - nSlot; if (rem > 0) for (let k=0;k<K;k++) next[k] += w * (pool[k]-tally[k]) / rem; }
+    if (a) th.atk += w; if (s) th.sum += w; if (r) th.rem += w; if (m) th.mrem += w; if (c) th.ht += w;
+  }
+  const div = arr => { for (let k=0;k<arr.length;k++) arr[k] /= W; };
+  setDist.forEach(div); div(handAny); div(handExp); div(setExp); div(next);
+  for (const k in th) th[k] /= W;
+  deck.forEach((e,k) => { if ((S.kh[e.name]||0) > 0) handAny[k] = 1; handExp[k] += (S.kh[e.name]||0); });
+  let ns = 0; for (let k=0;k<K;k++) ns += next[k]; if (ns > 0) for (let k=0;k<K;k++) next[k] /= ns;
+  return {N, ess: W*W/W2, setDist, handAny, handExp, setExp, next, th, pool, P, D, over};
+}
+
+// ---------- Rendering ----------
+function pct(p){ if (p <= 0) return "0%"; if (p < 0.01) return "<1%"; if (p >= 1) return "100%"; if (p > 0.99) return ">99%"; return Math.round(p*100) + "%"; }
+function sev(p){ return p >= 0.6 ? "sev-hi" : p >= 0.3 ? "sev-mid" : "sev-lo"; }
+function cand(e, p){ return `<div class="cand ${tcls(e.type)}"><div class="nm"><span class="pip"></span><span class="txt">${esc(e.name)}</span></div><div class="pc">${pct(p)}</div><div class="bar"><i style="width:${(p*100).toFixed(1)}%"></i></div></div>`; }
+function evLabel(ev){
+  const s = ev.s !== undefined ? ` ${Math.round(ev.s*100)}%` : "";
+  if (ev.kind === "tag") return EV_TEXT[ev.tag] + s;
+  if (ev.kind === "card") return "Not " + ev.name + s;
+  if (ev.kind === "wasSet") return "Was set";
+  return "Evidence";
+}
+function renderStatus(){
+  const D = deckSize(), kh = khTotal();
+  const st = S.sets.filter(x=>x.zone==="st").length, mon = S.sets.length - st;
+  const item = (v,l) => `<div class="stat"><b>${v}</b><span>${l}</span></div>`;
+  $("status").innerHTML = item(S.turn,"Turn") + item(D,"Deck") + item(S.hand.length + kh, kh ? `Hand · ${kh} known` : "Hand") + item(st,"Backrow") + item(mon,"Set mons");
+}
+function renderLog(){
+  $("log").innerHTML = S.log.length ? S.log.slice().reverse().map(l => `<li><span>T${l.t}</span><div>${esc(l.msg)}</div></li>`).join("") : `<li><span></span><div class="dim">Nothing logged yet.</div></li>`;
+}
+function renderBanner(res){
+  let h = "";
+  if (S.example) h += `<div class="banner"><span>This is an example duel against the sample ${esc(FMT.sampleName)} list. Start a new duel to track your own.</span><button class="btn small primary" data-a="newduel" id="b-new2">New duel</button></div>`;
+  if (res && res.error) h += `<div class="err">${esc(res.error)}</div>`;
+  if (res && res.over && res.over.length) h += `<div class="err">More copies logged than the list has: ${res.over.map(esc).join(", ")}. Fix the decklist or undo.</div>`;
+  const unk = S.deck.filter(e=>!e.known).length;
+  if (unk) h += `<div class="err">${unk} card${unk>1?"s":""} in the list ${unk>1?"aren't":"isn't"} recognized. Set the type under Opponent decklist so face-down odds stay right.</div>`;
+  $("banner").innerHTML = h; $("banner").hidden = !h;
+}
+function renderThreats(res){
+  const nST = S.sets.filter(x=>x.zone==="st").length;
+  const tiles = [
+    ["Backrow can stop an attack", res.th.atk, nST ? "" : "No backrow"],
+    ["Backrow can answer a summon", res.th.sum, nST ? "" : "No backrow"],
+    ["Hand holds spell/trap removal", res.th.rem, ""],
+    ["Hand holds monster removal", res.th.mrem, ""],
+    [FMT.handTile, res.th.ht, ""],
+  ];
+  $("threats").innerHTML = tiles.map(([l,p,note]) => `<div class="threat"><div class="lbl">${l}</div><div class="val ${note ? "" : sev(p)}">${note ? "—" : pct(p)}</div><div class="bar ${sev(p)}"><i style="width:${(p*100).toFixed(1)}%"></i></div></div>`).join("");
+  $("simmeta").textContent = `Based on ${res.N.toLocaleString()} simulated deals, ${Math.round(res.ess).toLocaleString()} effective after weighting. ${res.D} cards left in their deck.`;
+}
+function renderSets(res){
+  if (!S.sets.length){ $("sets").innerHTML = `<p class="empty">No face-down cards. Press Set spell/trap or Set monster when they set one.</p>`; return; }
+  $("sets").innerHTML = S.sets.map((sl,j) => {
+    const dist = res.setDist[j];
+    const order = S.deck.map((e,k)=>[e,dist[k]]).filter(x=>x[1]>0.0005).sort((a,b)=>b[1]-a[1]);
+    const top = order.slice(0,6), rest = order.slice(6).reduce((a,x)=>a+x[1],0);
+    const typeSum = t => order.filter(x=>x[0].type[0]===t).reduce((a,x)=>a+x[1],0);
+    const typeLine = sl.zone === "st" ? `<span class="meta"><span class="t-S">Spell ${pct(typeSum("S"))}</span> · <span class="t-T">Trap ${pct(typeSum("T"))}</span></span>` : "";
+    const chips = sl.ev.map((ev,x) => `<button class="chip" data-slot="${sl.id}" data-sa="rmev" data-x="${x}" title="Remove this evidence">${esc(evLabel(ev))} ✕</button>`).join("");
+    return `<div class="slot ${sl.zone}">
+      <div class="slot-head"><b><span class="facedown" aria-hidden="true"></span>${esc(sl.label)}</b><span>set turn ${sl.turn}</span></div>
+      ${typeLine}
+      <div class="cands">${top.map(([e,p]) => cand(e,p)).join("")}${rest > 0.005 ? `<div class="meta">Everything else: ${pct(rest)}</div>` : ""}</div>
+      ${chips ? `<div class="chips">${chips}</div>` : ""}
+      <div class="row">
+        <button class="btn small" data-slot="${sl.id}" data-sa="reveal">Revealed as card box</button>
+        <button class="btn small" data-slot="${sl.id}" data-sa="notcard">Not the card box</button>
+        ${sl.zone === "st" ? `<button class="btn small" data-slot="${sl.id}" data-sa="atk">Ignored attack</button><button class="btn small" data-slot="${sl.id}" data-sa="sum">Ignored summon</button>` : ""}
+        <button class="btn small" data-slot="${sl.id}" data-sa="tohand">Back to hand unseen</button>
+      </div></div>`;
+  }).join("");
+}
+function renderHand(res){
+  const kh = khTotal(), n = S.hand.length + kh;
+  if (!n){ $("hand").innerHTML = `<p class="empty">Their hand is empty.</p>`; return; }
+  const rows = S.deck.map((e,k)=>[e,res.handAny[k],res.handExp[k],S.kh[e.name]||0]).filter(x=>x[1]>0.005).sort((a,b)=>b[1]-a[1]||b[2]-a[2]);
+  const typeExp = t => S.deck.reduce((a,e,k)=> a + (e.type[0]===t ? res.handExp[k] : 0), 0);
+  $("hand").innerHTML = `<p class="meta" style="margin:0 0 8px">${n} card${n>1?"s":""}${kh?`, ${kh} known`:""}. Expected mix: <span class="t-M">${typeExp("M").toFixed(1)} monsters</span>, <span class="t-S">${typeExp("S").toFixed(1)} spells</span>, <span class="t-T">${typeExp("T").toFixed(1)} traps</span>.</p>
+  <div class="tablewrap"><table><thead><tr><th>Card</th><th class="n">Holds one+</th><th class="n">Copies</th></tr></thead><tbody>${
+    rows.map(([e,p,x,k]) => `<tr><td class="${tcls(e.type)}"><span class="pip"></span><span style="color:var(--ink)">${esc(e.name)}</span>${k?` <span class="meta">(${k} known)</span>`:""}</td><td class="n">${pct(p)}</td><td class="n">${x.toFixed(2)}</td></tr>`).join("")
+  }</tbody></table></div>`;
+}
+function renderNext(res){
+  if (res.D <= 0){ $("next").innerHTML = `<p class="empty">Their deck is empty.</p>`; return; }
+  const order = S.deck.map((e,k)=>[e,res.next[k]]).filter(x=>x[1]>0.0005).sort((a,b)=>b[1]-a[1]);
+  const typeSum = t => order.filter(x=>x[0].type[0]===t).reduce((a,x)=>a+x[1],0);
+  $("next").innerHTML = `<p class="meta" style="margin:0 0 8px"><span class="t-M">Monster ${pct(typeSum("M"))}</span> · <span class="t-S">Spell ${pct(typeSum("S"))}</span> · <span class="t-T">Trap ${pct(typeSum("T"))}</span></p><div class="cands">${order.slice(0,10).map(([e,p])=>cand(e,p)).join("")}</div>`;
+}
+function renderAll(res){
+  $("alltable").innerHTML = `<table><thead><tr><th>Card</th><th class="n">In list</th><th class="n">Seen</th><th class="n">Unseen</th><th class="n">In hand</th><th class="n">Face-down</th><th class="n">Next draw</th></tr></thead><tbody>${
+    S.deck.map((e,k) => { const seen = (S.pub[e.name]||0) + (S.kh[e.name]||0); return `<tr><td class="${tcls(e.type)}"><span class="pip"></span><span style="color:var(--ink)">${esc(e.name)}</span></td><td class="n">${e.count}</td><td class="n ${seen?"":"dim"}">${seen}</td><td class="n">${res.pool[k]}</td><td class="n">${pct(res.handAny[k])}</td><td class="n">${res.setExp[k] > 0.005 ? res.setExp[k].toFixed(2) : "–"}</td><td class="n">${pct(res.next[k])}</td></tr>`; }).join("")
+  }</tbody></table>`;
+}
+function renderDeckTable(){
+  const total = S.deck.reduce((a,e)=>a+e.count,0);
+  $("decktable").innerHTML = `<p class="meta" style="margin:0 0 6px">${total} cards in the main deck.</p><table><thead><tr><th>Card</th><th class="n">#</th><th>Type</th><th class="n">Set chance</th></tr></thead><tbody>${
+    S.deck.map((e,k) => `<tr><td class="${tcls(e.type)}"><span class="pip"></span><span style="color:var(--ink)">${esc(e.name)}</span>${e.known?"":`<span class="flag">not recognized</span>`}</td><td class="n">${e.count}</td><td><select id="dt-type-${k}" data-k="${k}" data-f="type" aria-label="Type of ${esc(e.name)}">${Object.keys(TYPE_NAME).map(t=>`<option value="${t}"${t===e.type?" selected":""}>${TYPE_NAME[t]}</option>`).join("")}</select></td><td class="n"><input type="number" id="dt-setw-${k}" data-k="${k}" data-f="setW" min="0" max="100" step="5" value="${Math.round(e.setW*100)}" aria-label="Set chance for ${esc(e.name)}">%</td></tr>`).join("")
+  }</tbody></table>`;
+}
+function syncDeckUI(){
+  $("decktext").value = S.deckText || S.deck.map(e=>`${e.count} ${e.name}`).join("\n");
+  $("cardlist").innerHTML = S.deck.map(e=>`<option value="${esc(e.name)}"></option>`).join("");
+  renderDeckTable();
+}
+let simTimer = 0;
+function commit(){
+  save(); renderStatus(); renderLog();
+  clearTimeout(simTimer);
+  simTimer = setTimeout(() => {
+    const res = simulate(); lastRes = res; renderBanner(res);
+    if (res.error){ ["threats","sets","hand","next","alltable"].forEach(id => $(id).innerHTML = ""); $("simmeta").textContent = ""; return; }
+    renderThreats(res); renderSets(res); renderHand(res); renderNext(res); renderAll(res);
+  }, 10);
+}
+
+// ---------- Events ----------
+document.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-a],[data-sa]"); if (!b) return;
+  if (b.dataset.sa){ slotAction(b.dataset.sa, +b.dataset.slot, +b.dataset.x); return; }
+  const fn = ACTIONS[b.dataset.a]; if (!fn) return;
+  if (S.example && b.dataset.a !== "newduel" && b.dataset.a !== "sampledeck") S.example = false;
+  fn(); if (b.dataset.a === "newduel" || b.dataset.a === "loaddeck") S.example = false;
+  commit();
+});
+document.addEventListener("change", ev => {
+  const t = ev.target; if (!t.dataset || t.dataset.k === undefined) return;
+  const e = S.deck[+t.dataset.k]; if (!e) return;
+  snapshot();
+  if (t.dataset.f === "type"){ e.type = t.value; if (!e.known){ e.setW = DEFAULT_SETW[e.type]; } e.known = true; log(`Marked ${e.name} as ${TYPE_NAME[e.type].toLowerCase()}.`); renderDeckTable(); }
+  if (t.dataset.f === "setW"){ e.setW = Math.max(0, Math.min(100, +t.value || 0)) / 100; log(`Set chance for ${e.name} changed to ${Math.round(e.setW*100)}%.`); }
+  commit();
+});
+$("strength").addEventListener("input", () => { $("strength-out").textContent = $("strength").value + "%"; });
+$("card").addEventListener("keydown", ev => { if (ev.key === "Enter"){ ev.preventDefault(); const n = resolveName($("card").value); if (n){ $("card").value = n; toast(`Matched ${n}. Pick what happened to it.`); } else toast("No single match in their list."); } });
+document.addEventListener("keydown", ev => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const tag = (ev.target.tagName || "").toLowerCase(); if (["input","textarea","select"].includes(tag)) return;
+  const map = {d:"draw", s:"setst", m:"setmon", e:"endturn", z:"undo", u:"undo"};
+  const a = map[ev.key.toLowerCase()]; if (!a) return;
+  ev.preventDefault(); if (S.example && a !== "undo") S.example = false; ACTIONS[a](); commit();
+});
+
+// ---------- Boot ----------
+function exampleDuel(){
+  S = blank(parseDeck(SAMPLE)); S.deckText = SAMPLE; S.example = true;
+  ACTIONS.draw5();
+  $("card").value = FMT.example.play; ACTIONS.play(); for (let i=0;i<FMT.example.draws;i++) ACTIONS.draw();
+  if (FMT.example.banish){ $("card").value = FMT.example.banish; ACTIONS.play(); }
+  ACTIONS.setmon(); ACTIONS.setst(); ACTIONS.setst(); ACTIONS.endturn();
+  globalEv("st","atk");
+  $("card").value = FMT.example.reveal; slotAction("reveal", S.sets[1].id);
+  ACTIONS.endturn(); ACTIONS.draw(); $("card").value = "";
+  history = [];
+}
+if (!load()) exampleDuel();
+syncDeckUI();
+commit();
+</script>
