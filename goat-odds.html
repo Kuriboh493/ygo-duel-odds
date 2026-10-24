@@ -198,11 +198,11 @@ details[open]>summary{margin-bottom:10px}
       </section>
       <section class="panel">
         <details id="d-deck"><summary>Opponent decklist</summary>
-          <p class="hint" style="margin-top:0">Paste a list with one card per line, like <code>3 Book of Moon</code> or <code>Book of Moon x3</code>. Lines after an Extra Deck or Side Deck heading are skipped. Loading a list starts a new duel.</p>
+          <p class="hint" style="margin-top:0">Paste any decklist with one card per line, like <code>3 Book of Moon</code> or <code>Book of Moon x3</code>, or paste or open a .ydk file. Every printed card is recognized, and Extra Deck and Side Deck cards are skipped. Loading a list starts a new duel.</p>
           <textarea id="decktext" spellcheck="false"></textarea>
-          <div class="row" style="margin:8px 0 12px"><button class="btn primary" data-a="loaddeck" id="b-load">Load list and start a new duel</button><button class="btn" data-a="sampledeck" id="b-sample">Paste the sample list</button></div>
+          <div class="row" style="margin:8px 0 12px"><button class="btn primary" data-a="loaddeck" id="b-load">Load list and start a new duel</button><button class="btn" data-a="sampledeck" id="b-sample">Paste the sample list</button><label class="btn" for="ydkfile">Open a .ydk or text file</label><input type="file" id="ydkfile" accept=".ydk,.txt,text/plain" hidden></div>
           <h3>Card details</h3>
-          <p class="hint" style="margin-top:0">"Set chance" is how readily a player sets this card face-down instead of playing it. Cards marked "not recognized" need a type picked.</p>
+          <p class="hint" style="margin-top:0">"Set chance" is how readily a player sets this card face-down instead of playing it. For less common cards these values are guessed from card text, so adjust any that look off. Cards marked "not recognized" need a type picked.</p>
           <div class="tablewrap mini" id="decktable"></div>
         </details>
       </section>
@@ -210,6 +210,7 @@ details[open]>summary{margin-bottom:10px}
         <details id="d-how"><summary>How the odds are worked out</summary>
           <p>Every card in their list that you have not seen is equally likely to be anywhere hidden: in their hand, face-down on the field, or in their deck. That alone gives the standard draw odds.</p>
           <p>Face-down cards add rules. A set monster has to be a monster, and a set spell/trap has to be a spell or trap. Players also choose what they set, so traps are weighted as likely sets while cards like Pot of Greed are not. Each "no response" you log lowers the weight of cards that would have answered.</p>
+          <p>Any decklist works. Staples use hand-tuned values. Every other card's type comes from the YGOPRODeck card database, and its set chance and response tags are guessed from its text. If the opponent reveals a card that isn't in their list, it's added to the list automatically.</p>
           <p>The page then simulates 30,000 deals of their unseen cards that fit everything you logged, weights each deal by how well it fits, and reports the share where each card lands in each spot. Only information visible to both players goes in.</p>
           <p>Known limits: it does not model what a player would choose to discard or keep. When a card leaves their hand face-down, it treats it as the most recently drawn card for hand evidence purposes.</p>
         </details>
@@ -219,6 +220,7 @@ details[open]>summary{margin-bottom:10px}
 </div>
 <div id="toast" hidden></div>
 
+<script src="cards.js"></script>
 <script>
 "use strict";
 // ---------- Format settings ----------
@@ -362,17 +364,54 @@ const N_SAMPLES = 30000;
 
 const norm = s => String(s).toLowerCase().replace(/[^a-z0-9]/g,"");
 const DBN = {}; for (const n in DB) DBN[norm(n)] = n;
+// Full card pool from cards.js (built by tools/build_cards.py). Hand-tuned DB entries above win over it.
+const TAGMAP = {a:"atk",s:"sum",r:"rem",m:"mrem",n:"neg",d:"draw",h:"hatk"};
+const GEN = {}, BYID = {};
+(function(){
+  const raw = window.CARD_DATA; if (typeof raw !== "string") return;
+  for (const line of raw.split("\n")){
+    const f = line.split("\t"); if (f.length < 5) continue;
+    const c = {name:f[0], type:f[1], setW:(+f[2])/100, tags:[...f[3]].map(x => TAGMAP[x]).filter(Boolean)};
+    GEN[norm(f[0])] = c; for (const id of f[4].split(",")) if (id) BYID[+id] = c;
+  }
+})();
+const HAS_FULL_DB = Object.keys(GEN).length > 0;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const tcls = t => "t-" + t[0];
 const $ = id => document.getElementById(id);
 
-function makeEntry(name, count){
+function lookupCard(name){
   const canon = DBN[norm(name)];
-  if (canon){ const [type,setW,tags] = DB[canon]; return {name:canon,count,type,setW,tags:tags.slice(),known:true}; }
+  if (canon){ const [type,setW,tags] = DB[canon]; return {name:canon,type,setW,tags:tags.slice()}; }
+  const g = GEN[norm(name)];
+  return g ? {name:g.name,type:g.type,setW:g.setW,tags:g.tags.slice()} : null;
+}
+function makeEntry(name, count){
+  const c = lookupCard(name);
+  if (c) return Object.assign(c, {count, known:true});
   return {name:name.trim(),count,type:"M",setW:DEFAULT_SETW.M,tags:[],known:false};
 }
+function addTo(out, idx, e){
+  if (e.type === "X"){ out.skipped.push(e.name); return; }
+  const k = norm(e.name);
+  if (idx[k] !== undefined) out[idx[k]].count += e.count; else { idx[k] = out.length; out.push(e); }
+}
+function parseYdk(text){
+  const out = []; out.skipped = []; out.badIds = 0; const idx = {}; let skip = false;
+  for (const raw of text.split(/\r?\n/)){
+    const line = raw.trim().toLowerCase(); if (!line) continue;
+    if (line.startsWith("#main")){ skip = false; continue; }
+    if (line.startsWith("#extra") || line.startsWith("!side")){ skip = true; continue; }
+    if (line.startsWith("#") || skip || !/^\d+$/.test(line)) continue;
+    const c = BYID[+line]; if (!c){ out.badIds++; continue; }
+    addTo(out, idx, makeEntry(c.name, 1));
+  }
+  return out;
+}
 function parseDeck(text){
-  const out = []; const idx = {}; let skip = false;
+  const body = text.replace(/^\s*[#!].*$/gm, "");
+  if (/^\s*#main/im.test(text) || (/^\s*\d{4,9}\s*$/m.test(body) && !/[a-z]{3}/i.test(body))) return parseYdk(text);
+  const out = []; out.skipped = []; out.badIds = 0; const idx = {}; let skip = false;
   for (const raw of text.split(/\r?\n/)){
     const line = raw.trim();
     if (!line || line.startsWith("#") || line.startsWith("//")) continue;
@@ -385,8 +424,7 @@ function parseDeck(text){
     if ((m = line.match(/^(\d+)\s*[xX]?\s+(.+)$/))){ count = +m[1]; name = m[2]; }
     else if ((m = line.match(/^(.+?)\s*[xX]\s*(\d+)$/))){ count = +m[2]; name = m[1]; }
     name = name.trim(); if (!name || count < 1) continue;
-    const e = makeEntry(name, count); const k = norm(e.name);
-    if (idx[k] !== undefined) out[idx[k]].count += count; else { idx[k] = out.length; out.push(e); }
+    addTo(out, idx, makeEntry(name, count));
   }
   return out;
 }
@@ -422,7 +460,16 @@ const inc = (o,k,d) => { o[k] = (o[k]||0) + d; if (o[k] <= 0) delete o[k]; };
 function needCard(){
   const v = $("card").value; const name = resolveName(v);
   if (!v.trim()){ toast("Type a card name in the card box first."); return null; }
-  if (!name){ toast(`"${v}" doesn't match one card in their decklist. Add it to the list or type more of the name.`); return null; }
+  if (!name){
+    // A card outside their list showed up (side deck, wrong list): add it rather than refuse.
+    const c = lookupCard(v);
+    if (c && c.type !== "X"){
+      S.deck.push(Object.assign(c, {count:1, known:true})); S.deckText = null; syncDeckUI();
+      toast(`${c.name} wasn't in their list, so it was added. Their list now has ${S.deck.reduce((a,e)=>a+e.count,0)} cards.`);
+      $("card").value = c.name; return c.name;
+    }
+    toast(`"${v}" doesn't match one card in their decklist. Type more of the name.`); return null;
+  }
   return name;
 }
 function drawOne(){ S.hand.push({id:S.nid++, ev:[]}); }
@@ -456,10 +503,10 @@ const ACTIONS = {
   undo(){ if (!history.length) return toast("Nothing to undo."); S = JSON.parse(history.pop()); syncDeckUI(); toast("Undone."); },
   newduel(){ snapshot(); const d = S.deck, dt = S.deckText; S = blank(d); S.deckText = dt; log("New duel started."); toast("New duel. Press Draw opening 5 when they draw."); },
   loaddeck(){ const txt = $("decktext").value; const d = parseDeck(txt); const total = d.reduce((a,e)=>a+e.count,0);
-    if (!d.length) return toast("No cards found in that list.");
+    if (!d.length) return toast(d.badIds && !HAS_FULL_DB ? "The card database didn't load, so .ydk files can't be read. Paste card names instead." : "No cards found in that list.");
     snapshot(); S = blank(d); S.deckText = txt; log(`Loaded a ${total}-card list. New duel started.`); syncDeckUI();
     const unk = d.filter(e=>!e.known).length;
-    toast(`Loaded ${total} cards.` + (unk ? ` ${unk} not recognized; set their type below.` : "") + (total !== 40 ? " The main deck isn't 40 cards; check the list." : "")); },
+    toast(`Loaded ${total} cards.` + (d.skipped.length ? ` Skipped ${d.skipped.length} Extra Deck card${d.skipped.length>1?"s":""}.` : "") + (d.badIds ? ` ${d.badIds} card ID${d.badIds>1?"s":""} not found.` : "") + (unk ? ` ${unk} not recognized; set their type below.` : "") + (total < 40 || total > 60 ? " A main deck should be 40 to 60 cards; check the list." : "")); },
   sampledeck(){ $("decktext").value = SAMPLE; toast("Sample list pasted. Press Load to use it."); },
 };
 function globalEv(zoneOrHand, tag){
@@ -687,6 +734,13 @@ document.addEventListener("change", ev => {
   if (t.dataset.f === "type"){ e.type = t.value; if (!e.known){ e.setW = DEFAULT_SETW[e.type]; } e.known = true; log(`Marked ${e.name} as ${TYPE_NAME[e.type].toLowerCase()}.`); renderDeckTable(); }
   if (t.dataset.f === "setW"){ e.setW = Math.max(0, Math.min(100, +t.value || 0)) / 100; log(`Set chance for ${e.name} changed to ${Math.round(e.setW*100)}%.`); }
   commit();
+});
+$("ydkfile").addEventListener("change", ev => {
+  const f = ev.target.files && ev.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => { $("decktext").value = String(r.result || ""); S.example = false; ACTIONS.loaddeck(); S.example = false; commit(); ev.target.value = ""; };
+  r.onerror = () => toast("That file couldn't be read.");
+  r.readAsText(f);
 });
 $("strength").addEventListener("input", () => { $("strength-out").textContent = $("strength").value + "%"; });
 $("card").addEventListener("keydown", ev => { if (ev.key === "Enter"){ ev.preventDefault(); const n = resolveName($("card").value); if (n){ $("card").value = n; toast(`Matched ${n}. Pick what happened to it.`); } else toast("No single match in their list."); } });

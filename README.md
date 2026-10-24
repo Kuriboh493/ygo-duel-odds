@@ -5,7 +5,20 @@ Two single-page calculators for retro-format Yu-Gi-Oh! duels on DuelingBook. You
 - `goat-odds.html`: Goat format, with a sample Goat Control list.
 - `edison-odds.html`: Edison format, with a sample Blackwing list and hand-trap tracking for Gorz, Tragoedia and Battle Fader.
 
-Open either file in a browser. No build step or server is needed.
+Open either file in a browser. No build step or server is needed. Keep `cards.js` in the same folder.
+
+## Any decklist
+
+Paste a list of card names like `3 Book of Moon`, or paste or open a `.ydk` file. Every printed card is recognized through `cards.js`, a database built from the YGOPRODeck card API. Extra Deck and Side Deck cards are skipped. If the opponent reveals a card that isn't in their list, it's added automatically.
+
+Common staples use hand-tuned values in each page. For every other card, the chance it gets set and the tags (stops attacks, answers summons, removal, negation, hand trap) are guessed from its text. You can adjust them in the page.
+
+To refresh the card database after new sets come out:
+
+```
+curl -o cardinfo.json https://db.ygoprodeck.com/api/v7/cardinfo.php
+python3 tools/build_cards.py cardinfo.json cards.js
+```
 
 ## How it works
 
