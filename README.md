@@ -4,6 +4,10 @@ A helper for playing Yu-Gi-Oh! **Goat** and **Edison** format on [DuelingBook](h
 
 ![The panel during a duel](docs/panel-duel.png)
 
+### [⬇ Download YGO Duel Odds](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/ygo-duel-odds.zip)
+
+Then follow the [install steps](#install-it-about-5-minutes) below. It takes about 5 minutes.
+
 It only uses what both players can see on screen. It never peeks at your opponent's hidden cards. Some tournaments don't allow helper tools, so check the rules before using it in an event.
 
 - [Install it (about 5 minutes)](#install-it-about-5-minutes)
@@ -15,15 +19,15 @@ It only uses what both players can see on screen. It never peeks at your opponen
 
 ## Install it (about 5 minutes)
 
-It works in **Chrome, Edge, Brave, Opera, Vivaldi** and **Firefox**. It isn't in any browser's add-on store yet, so you install it from a folder. That's what the steps below walk through.
+It works in **Chrome, Edge, Brave, Opera, Vivaldi** and **Firefox**. It isn't in any browser's add-on store yet, so there's no one-click install. You download a folder and point your browser at it, and the steps below walk through that.
 
 ### Step 1: Download it
 
-1. Click this link: **[Download YGO Duel Odds](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip)**. A file called `ygo-duel-odds-main.zip` downloads.
+1. Click this link: **[Download YGO Duel Odds](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/ygo-duel-odds.zip)**. A file called `ygo-duel-odds.zip` downloads, usually into your Downloads folder.
 2. Unzip it:
    - **Windows:** right-click the file, choose **Extract All**, then **Extract**.
    - **Mac:** double-click the file.
-3. You now have a folder called `ygo-duel-odds-main`. Inside it is a folder called `extension`. Remember where it is, and don't delete it: the browser runs the extension from this folder.
+3. You now have a folder called `ygo-duel-odds`. Leave it somewhere you won't delete it, like your Documents folder: the browser runs the extension from this folder.
 
 ### Step 2: Add it to your browser
 
@@ -37,7 +41,7 @@ It works in **Chrome, Edge, Brave, Opera, Vivaldi** and **Firefox**. It isn't in
    - Vivaldi: `vivaldi://extensions`
 2. Turn on **Developer mode**. It's a switch in the top-right corner of the page. In Edge it's on the left.
 3. Click **Load unpacked**.
-4. Find the `ygo-duel-odds-main` folder, click the **`extension`** folder inside it once, and click **Select** (or **Open**).
+4. Find the **`ygo-duel-odds`** folder, click it once, and click **Select** (or **Open**).
 5. "YGO Duel Odds" now appears in the list. It may show a yellow "warnings" note. That's expected and safe to ignore.
 6. Pin it so it's easy to find. Click the puzzle-piece icon next to the address bar, then the pin next to "YGO Duel Odds". Its icon is a card with an eye on it.
 
@@ -45,7 +49,7 @@ It works in **Chrome, Edge, Brave, Opera, Vivaldi** and **Firefox**. It isn't in
 
 1. Type `about:debugging#/runtime/this-firefox` into the address bar and press Enter.
 2. Click **Load Temporary Add-on…**.
-3. Open the `ygo-duel-odds-main` folder, then the `extension` folder, and pick the file called **`manifest.json`**.
+3. Open the `ygo-duel-odds` folder and pick the file called **`manifest.json`**.
 4. Firefox only keeps add-ons installed this way until you close Firefox. Each time you reopen it, repeat these three steps.
 
 ### Step 3: Open the panel
@@ -133,6 +137,7 @@ A note at the top of the Odds tab tells you when this happens.
 | "The extension can't see DuelingBook yet" (Firefox) | Click **Allow access to DuelingBook**, then reload the DuelingBook page. |
 | "Duel events aren't coming through" | DuelingBook may have updated. The board is still read, but "no response" isn't logged automatically. Please [report it](#reporting-a-problem). |
 | The extension disappeared (Firefox) | Firefox removes add-ons installed this way when it closes. Repeat [Step 2](#step-2-add-it-to-your-browser). |
+| I want the newest version | Download it again from the [download link](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/ygo-duel-odds.zip), replace your old `ygo-duel-odds` folder with the new one, then click the circular-arrow **reload** button on the extension in your browser's extensions page. |
 | The numbers look wrong | Open **Settings** and click **Restart tracking from the current board**. If it's still wrong, [report it](#reporting-a-problem). |
 | The panel is blank or stuck | Close the panel and open it again. If that doesn't help, reload DuelingBook. |
 
@@ -189,6 +194,13 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
 - **`report.html`** gathers diagnostics from the panel and the DuelingBook tab, and opens a prefilled GitHub issue.
 
 If DuelingBook changes its client, the panel says duel events aren't coming through. Board reading may keep working in that case.
+
+### Releasing a new version
+
+1. Raise `version` in `extension/manifest.json`, for example to `0.3.1`, and commit.
+2. Tag and push: `git tag v0.3.1 && git push origin v0.3.1`.
+
+The `Release` GitHub workflow checks that the tag matches the manifest. It then zips `extension/` and attaches `ygo-duel-odds.zip` to a release for that tag. The README's download link always points at the newest release.
 
 ### Refreshing the card database
 

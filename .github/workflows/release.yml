@@ -1,0 +1,38 @@
+# Builds the downloadable extension when a version tag (like v0.3.0) is pushed, and attaches it to a GitHub release.
+# The README's download link points at the newest release's ygo-duel-odds.zip, so it always gets the latest version.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the extension version
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('extension/manifest.json'))['version'])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME doesn't match manifest.json version $version"; exit 1
+          fi
+
+      - name: Zip the extension
+        # Files sit at the top of the zip, so unzipping gives a single folder with manifest.json inside.
+        run: cd extension && zip -r -X ../ygo-duel-odds.zip . -x ".*" -x "*/.*"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" ygo-duel-odds.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" ygo-duel-odds.zip --title "YGO Duel Odds $GITHUB_REF_NAME" \
+              --notes "Download **ygo-duel-odds.zip** below, then follow the install steps in the [README](https://github.com/Kuriboh493/ygo-duel-odds#install-it-about-5-minutes)."
+          fi
