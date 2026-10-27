@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YGO Duel Odds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1><span id="title">Goat</span> Duel Odds</h1>
+      <div class="conn"><span class="dot" id="dot"></span><span id="conn">Looking for a DuelingBook tab…</span></div>
+    </div>
+    <select class="fmt" id="format" aria-label="Format">
+      <option value="goat">Goat</option>
+      <option value="edison">Edison</option>
+    </select>
+    <div class="status" id="status"></div>
+  </header>
+
+  <div class="col">
+    <div id="banner"></div>
+    <section class="panel" aria-labelledby="h-th">
+      <h2 id="h-th">At a glance</h2>
+      <div class="threats" id="threats"></div>
+      <p class="meta" id="simmeta" style="margin:10px 0 0"></p>
+    </section>
+    <section class="panel" aria-labelledby="h-fd">
+      <h2 id="h-fd">Face-down cards</h2>
+      <div class="sets" id="sets"></div>
+    </section>
+    <section class="panel" aria-labelledby="h-hand">
+      <h2 id="h-hand">Their hand</h2>
+      <div id="hand"></div>
+    </section>
+    <section class="panel" aria-labelledby="h-next">
+      <h2 id="h-next">Their next draw</h2>
+      <div id="next"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-ev">
+      <h2 id="h-ev">What they didn't do</h2>
+      <label class="toggle"><input type="checkbox" id="auto" checked> Log "no response" automatically</label>
+      <p class="hint" style="margin:-4px 0 10px">When you attack, summon or activate a spell or trap and they make no play before your next action, their face-down cards get evidence against cards that would have responded.</p>
+      <div class="slider"><label for="strength">How sure they'd have used it</label><input type="range" id="strength" min="10" max="100" step="5" value="70"><output id="strength-out">70%</output></div>
+      <h3>Their face-down spells and traps</h3>
+      <div class="row">
+        <button class="btn" data-a="ev-atk">I attacked, no response</button>
+        <button class="btn" data-a="ev-sum">I summoned, no response</button>
+        <button class="btn" data-a="ev-neg">My card resolved, no negation</button>
+      </div>
+      <h3>Their hand</h3>
+      <div class="row">
+        <button class="btn" data-a="ev-rem">Left my backrow alone</button>
+        <button class="btn" data-a="ev-mrem">Didn't remove my monster</button>
+        <button class="btn" data-a="ev-hand" id="b-evhand">Could have summoned Chaos, didn't</button>
+      </div>
+      <p class="hint">Click ✕ next to a candidate to rule that card out for that face-down card. Click an evidence tag to remove it.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="h-log">
+      <h2 id="h-log">Duel log</h2>
+      <ul class="log" id="log"></ul>
+    </section>
+
+    <section class="panel">
+      <details id="d-all"><summary>Every card in their list</summary><div class="tablewrap" id="alltable"></div></details>
+    </section>
+    <section class="panel">
+      <details id="d-deck"><summary>Opponent decklist</summary>
+        <p class="hint" style="margin-top:0">Paste any decklist with one card per line, like <code>3 Book of Moon</code>, or paste or open a .ydk file. Extra Deck and Side Deck cards are skipped. Cards they show that aren't in the list are added for this duel.</p>
+        <textarea id="decktext" spellcheck="false"></textarea>
+        <div class="row" style="margin:8px 0 12px"><button class="btn primary" data-a="loaddeck">Load list</button><button class="btn" data-a="sampledeck">Paste the sample list</button><label class="btn" for="ydkfile">Open a .ydk or text file</label><input type="file" id="ydkfile" accept=".ydk,.txt,text/plain" hidden></div>
+        <h3>Card details</h3>
+        <p class="hint" style="margin-top:0">"Set chance" is how readily a player sets this card face-down instead of playing it. Values for less common cards are guessed from card text, so adjust any that look off.</p>
+        <div class="tablewrap mini" id="decktable"></div>
+      </details>
+    </section>
+    <section class="panel">
+      <details id="d-set"><summary>Tracking</summary>
+        <label for="side" class="meta">Whose cards to track</label>
+        <select id="side" style="margin:4px 0 10px">
+          <option value="auto">My opponent (automatic)</option>
+          <option value="p2">Player 2 (for watching a duel)</option>
+          <option value="p1">Player 1 (for watching a duel)</option>
+        </select>
+        <div class="row"><button class="btn" data-a="restart">Restart tracking from the current board</button></div>
+        <p class="hint">Restarting clears all evidence and face-down numbering for this duel. Use it if tracking started partway through a duel.</p>
+      </details>
+    </section>
+    <section class="panel prose">
+      <details id="d-how"><summary>How the odds are worked out</summary>
+        <p>The extension reads the public state of the duel from DuelingBook as it happens: how many cards are in their hand and deck, every face-down card, and every card that has been face-up or revealed. It never reads the names of cards in their hand or face-down unless DuelingBook showed them to both players.</p>
+        <p>Every card in their list that you haven't seen is equally likely to be anywhere hidden: their hand, face-down on the field, face-down banished, or the deck. Set monsters must be monsters and set spells/traps must be spells or traps, weighted by how often each card gets set. Each "no response" lowers the weight of cards that would have answered.</p>
+        <p>A face-down card that goes back to their hand unseen keeps its "was set" weighting. A card that is revealed and then returned to their hand is counted as known.</p>
+        <p>The panel then simulates 30,000 deals of their unseen cards that fit everything so far, weights each deal by how well it fits, and reports the share where each card lands in each spot.</p>
+      </details>
+    </section>
+  </div>
+</div>
+<div id="toast" hidden></div>
+<script src="cards.js"></script>
+<script src="formats.js"></script>
+<script src="panel.js"></script>
+</body>
+</html>

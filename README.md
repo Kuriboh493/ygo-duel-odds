@@ -7,6 +7,24 @@ Two single-page calculators for retro-format Yu-Gi-Oh! duels on DuelingBook. You
 
 Open either file in a browser. No build step or server is needed. Keep `cards.js` in the same folder.
 
+## Browser extension
+
+`extension/` is a Chrome extension that does the logging for you. It runs in a side panel next to DuelingBook and updates the odds as the duel happens. You don't press anything to log draws, sets, activations, searches or turns.
+
+To install it, open `chrome://extensions`, turn on Developer mode, click "Load unpacked" and choose the `extension` folder. Then open DuelingBook, or reload it if it was already open, and click the extension's toolbar button to open the panel. Pick Goat or Edison at the top, and paste your opponent's list under "Opponent decklist".
+
+What it reads, all public information:
+
+- Their hand size, deck size, every face-down card, and every card that is face-up, in the graveyard or banished.
+- Cards they reveal, or add to their hand in a way both players can see, such as a search. These count as known cards in their hand.
+- A face-down card that goes back to their hand unseen keeps its "was set" weighting.
+
+It never reads the names of cards in their hand or face-down cards that DuelingBook hasn't shown to both players.
+
+"No response" evidence is logged automatically. When you attack, summon, or activate a spell or trap, and they make no play before your next action, their face-down cards get evidence against cards that would have responded. An attack also adds evidence against hand traps. Any play they make in between, including a chat message, cancels it. You can turn this off, set how strong the evidence is, and remove any single piece of evidence in the panel.
+
+The extension hooks into DuelingBook's own page code. If DuelingBook changes that code, the panel says that duel events aren't coming through. Board reading may still work in that case, but "no response" won't be logged automatically.
+
 ## Any decklist
 
 Paste a list of card names like `3 Book of Moon`, or paste or open a `.ydk` file. Every printed card is recognized through `cards.js`, a database built from the YGOPRODeck card API. Extra Deck and Side Deck cards are skipped. If the opponent reveals a card that isn't in their list, it's added automatically.
@@ -18,6 +36,7 @@ To refresh the card database after new sets come out:
 ```
 curl -o cardinfo.json https://db.ygoprodeck.com/api/v7/cardinfo.php
 python3 tools/build_cards.py cardinfo.json cards.js
+cp cards.js extension/cards.js
 ```
 
 ## How it works
