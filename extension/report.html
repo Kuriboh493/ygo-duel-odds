@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report a Problem</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="panel.css">
+<style>
+/* Report page: one readable column, reusing the panel's tokens and controls. */
+.page{max-width:720px;margin:0 auto;padding:28px 16px 48px}
+.page-head{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+.page-head img{border-radius:8px}
+.page-head h1{font-size:30px}
+.lede{color:var(--muted);margin:0 0 20px;max-width:60ch}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field label,.field .lbl{font-weight:600;font-size:13px}
+.field .opt{font-weight:400;color:var(--muted)}
+.field textarea{font:14px/1.5 var(--f-body);min-height:96px}
+.checks{display:flex;flex-direction:column;gap:6px;margin:4px 0 16px}
+.facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 14px;font-size:13px;margin:0}
+.facts dt{color:var(--muted)}
+.facts dd{margin:0;font-family:var(--f-mono);font-size:12.5px;overflow-wrap:anywhere}
+.ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)}
+pre.diag{font:12px/1.5 var(--f-mono);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:10px 12px;max-height:340px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:10px 0 0}
+.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}
+.note{font-size:12.5px;color:var(--muted);margin-top:10px}
+#status{font-size:13px;margin-top:10px;min-height:1.4em}
+.err-field textarea{border-color:var(--bad)}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-head"><img src="icons/icon-48.png" alt="" width="40" height="40"><h1>Report a Problem</h1></div>
+  <p class="lede">Tell us what went wrong. A summary of what the extension saw is attached, so the problem can be reproduced. Nothing is sent until you choose to send it.</p>
+
+  <section class="panel" aria-labelledby="h-what">
+    <h2 id="h-what">What happened</h2>
+    <div class="field"><label for="title">Short summary</label><input type="text" id="title" placeholder="e.g. Face-down count is wrong after Book of Moon"></div>
+    <div class="field" id="f-what"><label for="what">What went wrong?</label><textarea id="what" placeholder="What did you do, and what did the panel show?"></textarea></div>
+    <div class="field"><label for="expected">What did you expect? <span class="opt">(optional)</span></label><textarea id="expected" style="min-height:64px"></textarea></div>
+    <div class="field"><label for="when">When did it happen?</label>
+      <select id="when">
+        <option>During a duel I was playing</option>
+        <option>While watching someone else's duel</option>
+        <option>Before a duel, or while setting up a decklist</option>
+        <option>Installing or opening the extension</option>
+        <option>Something else</option>
+      </select>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="h-diag" style="margin-top:14px">
+    <h2 id="h-diag">What gets attached</h2>
+    <dl class="facts" id="facts"><dt>Status</dt><dd>Collecting…</dd></dl>
+    <div class="row" style="margin-top:10px"><button class="btn small" id="b-refresh">Collect again</button></div>
+    <div class="checks">
+      <label class="toggle"><input type="checkbox" id="hide" checked> Hide player names</label>
+      <label class="toggle"><input type="checkbox" id="withlog" checked> Include the recent duel log and plays</label>
+    </div>
+    <details><summary class="sub">See everything that will be attached</summary><pre class="diag" id="diag"></pre></details>
+    <p class="note">The attachment only has public duel information: the extension never records the names of cards in a player's hand or face-down cards. It has no passwords, cookies or account details.</p>
+  </section>
+
+  <div class="actions">
+    <button class="btn primary" id="b-issue">Open a GitHub issue</button>
+    <button class="btn" id="b-copy">Copy report</button>
+    <button class="btn" id="b-save">Download report</button>
+  </div>
+  <p class="note">"Open a GitHub issue" opens a prefilled issue on the project page for you to review and submit. It needs a free GitHub account. Without one, copy or download the report and send it to the developer.</p>
+  <p id="status" role="status"></p>
+</div>
+<script src="compat.js"></script>
+<script src="report.js"></script>
+</body>
+</html>

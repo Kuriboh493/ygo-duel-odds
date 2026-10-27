@@ -8,32 +8,50 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="panel.css">
 </head>
-<body>
-<div class="wrap">
-  <header class="top">
-    <div>
-      <h1><span id="title">Goat</span> Duel Odds</h1>
-      <div class="conn"><span class="dot" id="dot"></span><span id="conn">Looking for a DuelingBook tab…</span></div>
-    </div>
+<body class="idle">
+<header class="topbar">
+  <div class="topbar-top">
+    <div class="brand"><img src="icons/icon-32.png" alt="" width="22" height="22"><h1><span id="title">Goat</span> Duel Odds</h1></div>
     <select class="fmt" id="format" aria-label="Format">
       <option value="goat">Goat</option>
       <option value="edison">Edison</option>
     </select>
-    <div class="status" id="status"></div>
-  </header>
+  </div>
+  <div class="conn" id="connbox"><span class="dot" id="dot"></span><span id="conn">Looking for a DuelingBook tab…</span></div>
+  <div class="status" id="status"></div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-odds" data-tab="odds" aria-controls="pane-odds">Odds</button>
+    <button role="tab" id="tab-deck" data-tab="deck" aria-controls="pane-deck">Their deck</button>
+    <button role="tab" id="tab-log" data-tab="log" aria-controls="pane-log">Log<span class="badge" id="logbadge" hidden></span></button>
+    <button role="tab" id="tab-settings" data-tab="settings" aria-controls="pane-settings">Settings</button>
+  </nav>
+</header>
 
-  <div class="col">
+<main class="wrap">
+  <div id="perm"></div>
+
+  <!-- Odds: what matters mid-duel, in the order you need it. -->
+  <section class="pane" id="pane-odds" role="tabpanel" aria-labelledby="tab-odds">
     <div id="banner"></div>
-    <section class="panel" aria-labelledby="h-th">
+    <section class="panel idle-card idle-only">
+      <h2>Waiting for a duel</h2>
+      <ol class="steps">
+        <li>Open <a href="https://www.duelingbook.com/" target="_blank" rel="noopener">DuelingBook</a>, or reload it if it was open before you installed the extension.</li>
+        <li>Pick Goat or Edison at the top.</li>
+        <li>Start or watch a duel. Everything here fills in on its own as the duel happens.</li>
+      </ol>
+      <p class="hint">Until then, the next-draw odds below are for an average deck in the format.</p>
+    </section>
+    <section class="panel duel-only" aria-labelledby="h-th">
       <h2 id="h-th">At a glance</h2>
       <div class="threats" id="threats"></div>
       <p class="meta" id="simmeta" style="margin:10px 0 0"></p>
     </section>
-    <section class="panel" aria-labelledby="h-fd">
+    <section class="panel duel-only" aria-labelledby="h-fd">
       <h2 id="h-fd">Face-down cards</h2>
       <div class="sets" id="sets"></div>
     </section>
-    <section class="panel" aria-labelledby="h-hand">
+    <section class="panel duel-only" aria-labelledby="h-hand">
       <h2 id="h-hand">Their hand</h2>
       <div id="hand"></div>
     </section>
@@ -41,12 +59,9 @@
       <h2 id="h-next">Their next draw</h2>
       <div id="next"></div>
     </section>
-
-    <section class="panel" aria-labelledby="h-ev">
+    <section class="panel duel-only" aria-labelledby="h-ev">
       <h2 id="h-ev">What they didn't do</h2>
-      <label class="toggle"><input type="checkbox" id="auto" checked> Log "no response" automatically</label>
-      <p class="hint" style="margin:-4px 0 10px">When you attack, summon or activate a spell or trap and they make no play before your next action, their face-down cards get evidence against cards that would have responded.</p>
-      <div class="slider"><label for="strength">How sure they'd have used it</label><input type="range" id="strength" min="10" max="100" step="5" value="70"><output id="strength-out">70%</output></div>
+      <p class="hint" style="margin:0 0 10px">"No response" is logged automatically when it's on in Settings. Use these for what the extension can't see.</p>
       <h3>Their face-down spells and traps</h3>
       <div class="row">
         <button class="btn" data-a="ev-atk">I attacked, no response</button>
@@ -61,18 +76,26 @@
       </div>
       <p class="hint">Click ✕ next to a candidate to rule that card out for that face-down card. Click an evidence tag to remove it.</p>
     </section>
+  </section>
 
-    <section class="panel" aria-labelledby="h-log">
-      <h2 id="h-log">Duel log</h2>
-      <ul class="log" id="log"></ul>
+  <!-- Their deck: the guess, every card, and the pasted list. -->
+  <section class="pane" id="pane-deck" role="tabpanel" aria-labelledby="tab-deck" hidden>
+    <section class="panel" aria-labelledby="h-guess">
+      <h2 id="h-guess">What they're playing</h2>
+      <div id="guess"></div>
     </section>
-
     <section class="panel">
-      <details id="d-all"><summary>Every card in their list</summary><div class="tablewrap" id="alltable"></div></details>
+      <details id="d-all"><summary>Every card they might run</summary><div class="tablewrap" id="alltable"></div></details>
     </section>
     <section class="panel">
       <details id="d-deck"><summary>Opponent decklist</summary>
-        <p class="hint" style="margin-top:0">Paste any decklist with one card per line, like <code>3 Book of Moon</code>, or paste or open a .ydk file. Extra Deck and Side Deck cards are skipped. Cards they show that aren't in the list are added for this duel.</p>
+        <fieldset class="modes">
+          <legend class="meta">Where their decklist comes from</legend>
+          <label class="toggle"><input type="radio" name="mode" value="guess" checked> Guess it from what they play</label>
+          <label class="toggle sub-opt"><input type="checkbox" id="learned" checked> <span id="learned-lbl">Guess from archetypes learned from published decklists</span></label>
+          <label class="toggle"><input type="radio" name="mode" value="list"> Use the list below</label>
+        </fieldset>
+        <p class="hint" style="margin-top:0">Paste any decklist with one card per line, like <code>3 Book of Moon</code>, or paste or open a .ydk file. Loading a list switches to using it. Extra Deck and Side Deck cards are skipped. Cards they show that aren't in the list are added for this duel.</p>
         <textarea id="decktext" spellcheck="false"></textarea>
         <div class="row" style="margin:8px 0 12px"><button class="btn primary" data-a="loaddeck">Load list</button><button class="btn" data-a="sampledeck">Paste the sample list</button><label class="btn" for="ydkfile">Open a .ydk or text file</label><input type="file" id="ydkfile" accept=".ydk,.txt,text/plain" hidden></div>
         <h3>Card details</h3>
@@ -80,31 +103,57 @@
         <div class="tablewrap mini" id="decktable"></div>
       </details>
     </section>
-    <section class="panel">
-      <details id="d-set"><summary>Tracking</summary>
-        <label for="side" class="meta">Whose cards to track</label>
-        <select id="side" style="margin:4px 0 10px">
-          <option value="auto">My opponent (automatic)</option>
-          <option value="p2">Player 2 (for watching a duel)</option>
-          <option value="p1">Player 1 (for watching a duel)</option>
-        </select>
-        <div class="row"><button class="btn" data-a="restart">Restart tracking from the current board</button></div>
-        <p class="hint">Restarting clears all evidence and face-down numbering for this duel. Use it if tracking started partway through a duel.</p>
-      </details>
+  </section>
+
+  <section class="pane" id="pane-log" role="tabpanel" aria-labelledby="tab-log" hidden>
+    <section class="panel" aria-labelledby="h-log">
+      <h2 id="h-log">Duel log</h2>
+      <ul class="log" id="log"></ul>
+    </section>
+  </section>
+
+  <section class="pane" id="pane-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+    <section class="panel" aria-labelledby="h-auto">
+      <h2 id="h-auto">"No response" evidence</h2>
+      <label class="toggle"><input type="checkbox" id="auto" checked> Log "no response" automatically</label>
+      <p class="hint" style="margin:-4px 0 12px">When you attack, summon or activate a spell or trap and they make no play before your next action, their face-down cards get evidence against cards that would have responded.</p>
+      <div class="slider"><label for="strength">How sure they'd have used it</label><input type="range" id="strength" min="10" max="100" step="5" value="70"><output id="strength-out">70%</output></div>
+    </section>
+    <section class="panel" aria-labelledby="h-track">
+      <h2 id="h-track">Tracking</h2>
+      <label for="side" class="meta">Whose cards to track</label>
+      <select id="side" style="margin:4px 0 10px">
+        <option value="auto">My opponent (automatic)</option>
+        <option value="p2">Player 2 (for watching a duel)</option>
+        <option value="p1">Player 1 (for watching a duel)</option>
+      </select>
+      <div class="row"><button class="btn" data-a="restart">Restart tracking from the current board</button></div>
+      <p class="hint">Restarting clears all evidence and face-down numbering for this duel. Use it if tracking started partway through a duel.</p>
+      <div class="row" style="margin-top:12px"><button class="btn" data-a="forget">Forget decks from past duels</button></div>
+      <p class="hint">Guesses learn from the cards you saw in past duels, most of all from earlier games against the same opponent. This clears that history.</p>
+    </section>
+    <section class="panel" aria-labelledby="h-help">
+      <h2 id="h-help">Something wrong?</h2>
+      <p class="hint" style="margin-top:0">The report page collects what the extension saw, so problems can be fixed. Player names are hidden unless you choose to include them.</p>
+      <div class="row"><a class="btn primary" href="report.html" target="_blank" rel="noopener">Report a problem</a></div>
     </section>
     <section class="panel prose">
       <details id="d-how"><summary>How the odds are worked out</summary>
         <p>The extension reads the public state of the duel from DuelingBook as it happens: how many cards are in their hand and deck, every face-down card, and every card that has been face-up or revealed. It never reads the names of cards in their hand or face-down unless DuelingBook showed them to both players.</p>
-        <p>Every card in their list that you haven't seen is equally likely to be anywhere hidden: their hand, face-down on the field, face-down banished, or the deck. Set monsters must be monsters and set spells/traps must be spells or traps, weighted by how often each card gets set. Each "no response" lowers the weight of cards that would have answered.</p>
-        <p>A face-down card that goes back to their hand unseen keeps its "was set" weighting. A card that is revealed and then returned to their hand is counted as known.</p>
-        <p>The panel then simulates 30,000 deals of their unseen cards that fit everything so far, weights each deal by how well it fits, and reports the share where each card lands in each spot.</p>
+        <p>The archetypes come from two sources: Goat and Edison decks that topped events, from Format Library, and decks published on YGOPRODeck. Topping decks count most. Each deck type from Format Library becomes an archetype. Published decks fill in copy counts and casual archetypes. At the start of a duel, each archetype's weight is mostly its share of topping lists. Without this data, the panel falls back to rough archetype sketches.</p>
+        <p>With no decklist pasted, their deck is guessed. The guess starts as a mix of those archetypes, plus decks you've faced before, with earlier games against the same opponent counting most. Each archetype gives every card a chance of running 0 to 3 copies. Every card they show shifts the mix toward decks that run it. Every card that hasn't appeared yet, as more of their deck gets seen, makes it a little less likely they run many copies. Cards no known deck runs are allowed for too.</p>
+        <p>Every unseen card is equally likely to be anywhere hidden: their hand, face-down on the field, face-down banished, or the deck. Set monsters must be monsters and set spells/traps must be spells or traps, weighted by how often each card gets set. Each "no response" lowers the weight of cards that would have answered. A face-down card that goes back to their hand unseen keeps its "was set" weighting.</p>
+        <p>The panel simulates thousands of deals. Each one first draws a whole decklist from the guess, then deals out their hidden cards, and is weighted by how well it fits everything so far. The odds are the share of deals where each card lands in each spot.</p>
       </details>
     </section>
-  </div>
-</div>
+  </section>
+</main>
+<footer class="foot"><span id="version"></span> · <a href="report.html" target="_blank" rel="noopener">Report a problem</a></footer>
 <div id="toast" hidden></div>
+<script src="compat.js"></script>
 <script src="cards.js"></script>
 <script src="formats.js"></script>
+<script src="learned.js"></script>
 <script src="panel.js"></script>
 </body>
 </html>

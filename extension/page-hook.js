@@ -117,7 +117,7 @@
     const orig = window.duelResponse;
     const wrapped = function(data){
       // The board as it was just before this play goes first, so the tracker sees what the play responded to.
-      try { if (data && data.play){ tick(); post("event", summarize(data)); } } catch (e){}
+      try { if (data && data.play){ tick(); post("event", summarize(data)); } } catch (e){ post("error", String(e && e.message || e)); }
       return orig.apply(this, arguments);
     };
     wrapped.__ygoOdds = true;
