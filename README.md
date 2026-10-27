@@ -6,6 +6,8 @@ A helper for playing Yu-Gi-Oh! **Goat** and **Edison** format on [DuelingBook](h
 
 ### [⬇ Download YGO Duel Odds](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/ygo-duel-odds.zip)
 
+For Chrome, Edge, Brave, Opera, Vivaldi and Firefox. Using Safari on a Mac? [Download the Safari version](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/ygo-duel-odds-safari.zip) instead.
+
 Then follow the [install steps](#install-it-about-5-minutes) below. It takes about 5 minutes.
 
 It only uses what both players can see on screen. It never peeks at your opponent's hidden cards. Some tournaments don't allow helper tools, so check the rules before using it in an event.
@@ -19,7 +21,7 @@ It only uses what both players can see on screen. It never peeks at your opponen
 
 ## Install it (about 5 minutes)
 
-It works in **Chrome, Edge, Brave, Opera, Vivaldi** and **Firefox**. It isn't in any browser's add-on store yet, so there's no one-click install. You download a folder and point your browser at it, and the steps below walk through that.
+It works in **Chrome, Edge, Brave, Opera, Vivaldi**, **Firefox** and **Safari** on a Mac. Safari has [its own steps](#safari-on-a-mac). It isn't in any browser's add-on store yet, so there's no one-click install. You download a folder and point your browser at it, and the steps below walk through that.
 
 ### Step 1: Download it
 
@@ -52,6 +54,8 @@ It works in **Chrome, Edge, Brave, Opera, Vivaldi** and **Firefox**. It isn't in
 3. Open the `ygo-duel-odds` folder and pick the file called **`manifest.json`**.
 4. Firefox only keeps add-ons installed this way until you close Firefox. Each time you reopen it, repeat these three steps.
 
+**Safari:** see [Safari on a Mac](#safari-on-a-mac) below. It has its own download.
+
 ### Step 3: Open the panel
 
 1. Go to [duelingbook.com](https://www.duelingbook.com/). If it was already open, reload the page so the extension can start.
@@ -60,6 +64,26 @@ It works in **Chrome, Edge, Brave, Opera, Vivaldi** and **Firefox**. It isn't in
 4. Pick **Goat** or **Edison** from the menu in the top-right of the panel.
 
 That's it. Start or watch a duel and the panel fills in by itself.
+
+### Safari on a Mac
+
+Safari installs extensions as a small Mac app. This one isn't signed with a paid Apple developer account, so macOS and Safari each ask you to confirm it once. You also have to tick one Safari setting each time you open Safari.
+
+1. **Download:** [Download the Safari version](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/ygo-duel-odds-safari.zip). A file called `ygo-duel-odds-safari.zip` downloads. Double-click it to unzip it.
+2. **Move it:** drag **YGO Duel Odds** (the app) into your **Applications** folder.
+3. **Open the app once.** macOS will say it can't check the app for malicious software, because it isn't signed. To open it anyway:
+   - **macOS 14 (Sonoma) or older:** hold **Control**, click the app, choose **Open**, then click **Open** again.
+   - **macOS 15 (Sequoia) or newer:** double-click the app and close the warning. Open **System Settings** > **Privacy & Security**, scroll down, and click **Open Anyway** next to "YGO Duel Odds". Enter your password if asked.
+
+   A small window opens. It's only the installer, so you can close it.
+4. **Turn on unsigned extensions in Safari.**
+   - Open **Safari** > **Settings** > **Advanced** and tick **Show features for web developers**.
+   - A **Developer** tab appears in Settings. Open it and tick **Allow unsigned extensions**, then enter your password. On Safari 16 or older, this is in the **Develop** menu instead.
+5. **Turn the extension on:** in Safari's **Settings** > **Extensions**, tick **YGO Duel Odds**.
+6. **Allow it on DuelingBook:** go to [duelingbook.com](https://www.duelingbook.com/), click the extension's icon in the toolbar, and choose **Always Allow on This Website**.
+7. **Open the panel:** click the icon again. In Safari, the panel opens in its own small window. Put it next to your DuelingBook window.
+
+**Each time you reopen Safari**, it switches off "Allow unsigned extensions" again, so repeat step 4. The extension stays installed, and turns back on when you tick that box. Only an extension signed through Apple's paid developer program avoids this step.
 
 ## Use it
 
@@ -136,6 +160,7 @@ A note at the top of the Odds tab tells you when this happens.
 | "Tracking is off" | Flip the switch at the top of the panel to **On**. |
 | "The extension can't see DuelingBook yet" (Firefox) | Click **Allow access to DuelingBook**, then reload the DuelingBook page. |
 | "Duel events aren't coming through" | DuelingBook may have updated. The board is still read, but "no response" isn't logged automatically. Please [report it](#reporting-a-problem). |
+| The extension disappeared (Safari) | Safari turns off unsigned extensions whenever it quits. In Safari's **Settings** > **Developer**, tick **Allow unsigned extensions** again ([step 4](#safari-on-a-mac)). |
 | The extension disappeared (Firefox) | Firefox removes add-ons installed this way when it closes. Repeat [Step 2](#step-2-add-it-to-your-browser). |
 | I want the newest version | Download it again from the [download link](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/ygo-duel-odds.zip), replace your old `ygo-duel-odds` folder with the new one, then click the circular-arrow **reload** button on the extension in your browser's extensions page. |
 | The numbers look wrong | Open **Settings** and click **Restart tracking from the current board**. If it's still wrong, [report it](#reporting-a-problem). |
@@ -174,12 +199,13 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
 
 | Path | What it is |
 |---|---|
-| `extension/` | The browser extension (Manifest V3, Chromium and Firefox 128+). |
+| `extension/` | The browser extension (Manifest V3: Chromium, Firefox 128+, and Safari through `tools/build_safari.sh`). |
 | `goat-odds.html`, `edison-odds.html` | The original single-page calculators. You log what the opponent does by hand. Open either in a browser, with `cards.js` in the same folder. Keyboard shortcuts: D draw, S set spell/trap, M set monster, E end turn, Z undo. |
 | `cards.js` | Card database built from the YGOPRODeck API. `extension/cards.js` is a copy. |
 | `tools/build_cards.py` | Builds `cards.js`. |
 | `tools/train_decks.py` | Learns the deck archetypes in `extension/learned.js`. |
 | `tools/make_icons.py` | Draws the toolbar icons. |
+| `tools/build_safari.sh` | Builds the Safari app with Xcode. The GitHub workflows run it on a macOS runner. |
 
 ### How the extension works
 
@@ -200,7 +226,9 @@ If DuelingBook changes its client, the panel says duel events aren't coming thro
 1. Raise `version` in `extension/manifest.json`, for example to `0.3.1`, and commit.
 2. Tag and push: `git tag v0.3.1 && git push origin v0.3.1`.
 
-The `Release` GitHub workflow checks that the tag matches the manifest. It then zips `extension/` and attaches `ygo-duel-odds.zip` to a release for that tag. The README's download link always points at the newest release.
+The `Release` GitHub workflow checks that the tag matches the manifest. It then attaches two files to a release for that tag: `ygo-duel-odds.zip`, which is `extension/` zipped, and `ygo-duel-odds-safari.zip`, the Safari app built on a macOS runner. The README's download links always point at the newest release. The `Safari build` workflow also builds the Safari app on every branch push that changes the extension, and keeps it as a downloadable artifact on the run.
+
+Safari doesn't support `world: "MAIN"` content scripts. When `page-hook.js` hasn't answered 1.5 seconds after load, `tracker.js` injects it from a web-accessible script tag instead. Safari also ignores `sidePanel`, `side_panel` and `sidebar_action`, so the toolbar button opens the panel in a window, or a tab if that fails.
 
 ### Refreshing the card database
 

@@ -1,5 +1,5 @@
 // Opens the panel from the toolbar button, using whatever the browser offers:
-// Chromium side panel (Chrome, Edge, Brave), Firefox sidebar, or a small window everywhere else.
+// Chromium side panel (Chrome, Edge, Brave), Firefox sidebar, or a small window (or tab) everywhere else, like Safari.
 // Also shows "OFF" on the toolbar icon while tracking is switched off.
 const api = globalThis.browser || globalThis.chrome;
 
@@ -9,7 +9,9 @@ if (api.sidePanel && api.sidePanel.setPanelBehavior){
 api.action.onClicked.addListener(() => {
   if (api.sidebarAction && api.sidebarAction.toggle) return api.sidebarAction.toggle();
   if (api.sidePanel && api.sidePanel.setPanelBehavior) return;
-  api.windows.create({url:api.runtime.getURL("panel.html"), type:"popup", width:460, height:900});
+  const url = api.runtime.getURL("panel.html");
+  // Safari and some others may not open pop-up windows for extensions; a tab always works.
+  Promise.resolve().then(() => api.windows.create({url, type:"popup", width:460, height:900})).catch(() => api.tabs.create({url}));
 });
 
 function badge(settings){
