@@ -1,0 +1,20 @@
+# Checks that the Safari version still builds whenever the extension changes on a branch.
+# The built app is kept as a downloadable artifact on the run, for testing before a release.
+name: Safari build
+
+on:
+  push:
+    branches-ignore: [main]
+    paths: ["extension/**", "tools/build_safari.sh", ".github/workflows/safari.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tools/build_safari.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ygo-duel-odds-safari
+          path: build/ygo-duel-odds-safari.zip

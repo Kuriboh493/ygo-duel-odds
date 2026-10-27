@@ -314,4 +314,20 @@
     save(); send(); reply({ok:true});
   });
   toHook("resend");
+
+  // Chrome and Firefox start page-hook.js inside the page themselves (world: MAIN in the manifest).
+  // Safari may not, so if the hook hasn't answered shortly after load, add it to the page by hand.
+  // page-hook.js ignores a second copy, so this is safe everywhere.
+  let hookSeen = false;
+  window.addEventListener("message", ev => { const d = ev.data; if (ev.source === window && d && d[TAG] === "hook") hookSeen = true; });
+  toHook("ping");
+  setTimeout(() => {
+    if (hookSeen) return;
+    try {
+      const s = document.createElement("script");
+      s.src = api.runtime.getURL("page-hook.js");
+      s.onload = () => { s.remove(); toHook("resend"); toHook("side", settings.side); toHook("pause", !on()); };
+      (document.head || document.documentElement).appendChild(s);
+    } catch (e){ noteError(e); }
+  }, 1500);
 })();

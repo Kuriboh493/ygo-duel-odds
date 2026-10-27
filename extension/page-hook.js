@@ -15,6 +15,7 @@
     if (d.kind === "side"){ sideOverride = d.data || "auto"; lastSig = ""; }
     if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
     if (d.kind === "history") post("history", history());
+    if (d.kind === "ping") post("pong", true);
     if (d.kind === "resend"){ lastSig = ""; if (window.duelResponse && window.duelResponse.__ygoOdds) post("hooked", true); }
   });
 

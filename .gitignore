@@ -1,3 +1,4 @@
 tools/.cache/
 cardinfo.json
 __pycache__/
+build/

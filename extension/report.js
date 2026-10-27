@@ -36,7 +36,9 @@ async function gather(){
   try { const r = await api.storage.local.get(["panel-diag"]); out.panel = r["panel-diag"] || null; } catch (e){ out.panel = {error:String(e)}; }
   out.tab = null;
   try {
-    const tabs = await api.tabs.query({url:DB_ORIGINS});
+    let tabs;
+    try { tabs = await api.tabs.query({url:DB_ORIGINS}); }
+    catch (e){ tabs = (await api.tabs.query({})).filter(t => /^https:\/\/(www\.)?duelingbook\.com\//.test(t.url || "")); }
     tabs.sort((a,b) => (b.active - a.active) || (b.lastAccessed||0) - (a.lastAccessed||0));
     out.duelingbookTabs = tabs.length;
     for (const t of tabs){

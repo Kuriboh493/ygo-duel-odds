@@ -627,7 +627,11 @@ const DB_ORIGINS = ["https://www.duelingbook.com/*","https://duelingbook.com/*"]
 async function connect(){
   await checkAccess();
   let tabs = [];
-  try { tabs = await api.tabs.query({url:DB_ORIGINS}); } catch (e){ noteError(e); }
+  try { tabs = await api.tabs.query({url:DB_ORIGINS}); }
+  catch (e){
+    // Some browsers (Safari) don't take URL patterns here, so filter every tab instead.
+    try { tabs = (await api.tabs.query({})).filter(t => /^https:\/\/(www\.)?duelingbook\.com\//.test(t.url || "")); } catch (e2){ noteError(e2); }
+  }
   tabs.sort((a,b) => (b.active - a.active) || (b.lastAccessed||0) - (a.lastAccessed||0));
   for (const t of tabs){
     try {
