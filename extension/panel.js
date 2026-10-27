@@ -27,7 +27,7 @@ const HAS_FULL_DB = Object.keys(GEN).length > 0;
 
 // ---------- Settings and decklist ----------
 // mode: "guess" works out their deck from what they play; "list" uses the pasted decklist.
-let settings = {format:"goat", mode:"guess", learned:true, auto:true, strength:0.7, side:"auto"};
+let settings = {format:"goat", mode:"guess", learned:true, enabled:true, auto:true, strength:0.7, side:"auto"};
 let decks = {};            // format -> {text, deck}
 let F, DBN;                // current format data and its normalized name index
 function useFormat(key){
@@ -400,6 +400,7 @@ function evLabel(ev){
 }
 function renderConn(){
   const dot = $("dot"), c = $("conn");
+  if (settings.enabled === false || (V && V.state === "off")){ dot.className = "dot off"; c.textContent = "Tracking is off."; return; }
   if (!V || V.state === "loading"){ dot.className = "dot"; c.textContent = "Looking for a DuelingBook tab… Open duelingbook.com, or reload it if it was open before the extension."; return; }
   if (V.state === "idle"){ dot.className = "dot wait"; c.textContent = V.error ? `Connected, but the duel couldn't be read: ${V.error}` : "Connected to DuelingBook. Waiting for a duel to start."; return; }
   dot.className = "dot on";
@@ -419,6 +420,7 @@ function renderLog(){
 function renderBanner(res){
   let h = "";
   const d = deckFor(), list = settings.mode === "list";
+  if (S.duel && V.caughtUp) h += `<div class="banner"><span>Tracking started partway through this duel, so it caught up from DuelingBook's duel log (${V.caughtUp.plays} of their plays). "No response" moments from before that weren't recorded.</span></div>`;
   if (list && d.sample) h += `<div class="banner"><span>Using the sample ${esc(F.fmt.sampleName)} list. Paste your opponent's list under Opponent decklist for better odds.</span></div>`;
   if (res && res.error) h += `<div class="err">${esc(res.error)}</div>`;
   if (S.added.length) h += `<div class="banner"><span>Seen but not in the list, so added for this duel: ${S.added.map(esc).join(", ")}.</span></div>`;
@@ -512,7 +514,9 @@ function syncDeckUI(){ $("decktext").value = deckFor().text; renderDeckTable(); 
 let simTimer = 0;
 function commit(){
   S = build(); renderConn(); renderStatus(); renderLog();
-  document.body.classList.toggle("idle", !S.duel);
+  const off = settings.enabled === false;
+  document.body.classList.toggle("off", off);
+  document.body.classList.toggle("idle", !S.duel && !off);
   clearTimeout(simTimer);
   simTimer = setTimeout(() => {
     const t0 = performance.now();
@@ -590,6 +594,13 @@ $("format").addEventListener("change", () => { useFormat($("format").value); sav
 $("strength").addEventListener("input", () => { $("strength-out").textContent = $("strength").value + "%"; });
 $("strength").addEventListener("change", () => { settings.strength = (+$("strength").value)/100; saveSettings(); });
 $("learned").addEventListener("change", () => { settings.learned = $("learned").checked; saveSettings(); commit(); });
+function setPower(onNow){
+  settings.enabled = onNow; saveSettings();
+  $("enabled").checked = onNow; $("power-lbl").textContent = onNow ? "On" : "Off";
+  commit();
+}
+$("enabled").addEventListener("change", () => { setPower($("enabled").checked); toast($("enabled").checked ? "Tracking is on. Catching up on the duel so far." : "Tracking is off. Nothing is read until you turn it back on."); });
+ACTIONS.turnon = () => { setPower(true); toast("Tracking is on. Catching up on the duel so far."); };
 $("auto").addEventListener("change", () => { settings.auto = $("auto").checked; saveSettings(); toast(settings.auto ? "\"No response\" will be logged automatically." : "Automatic \"no response\" logging is off."); });
 $("side").addEventListener("change", () => { settings.side = $("side").value; saveSettings(); toast("Switched sides. Tracking restarts."); });
 
@@ -601,7 +612,15 @@ api.runtime.onMessage.addListener((msg, sender) => {
 });
 // A duel that just ended joins the history the guesses learn from.
 api.storage.onChanged.addListener((ch, area) => {
-  if (area === "local" && ch["duel-history-v1"]){ history = ch["duel-history-v1"].newValue || []; commit(); }
+  if (area !== "local") return;
+  if (ch["duel-history-v1"]){ history = ch["duel-history-v1"].newValue || []; commit(); }
+  // Keeps the switch right when tracking is turned on or off from another panel window.
+  const nv = ch.settings && ch.settings.newValue;
+  if (nv && (nv.enabled !== false) !== (settings.enabled !== false)){
+    settings.enabled = nv.enabled !== false;
+    $("enabled").checked = settings.enabled; $("power-lbl").textContent = settings.enabled ? "On" : "Off";
+    commit();
+  }
 });
 const DB_ORIGINS = ["https://www.duelingbook.com/*","https://duelingbook.com/*"];
 // Find a DuelingBook tab on open, preferring the one in front.
@@ -702,6 +721,7 @@ api.storage.local.get(["settings","decks","duel-history-v1"]).then(r => {
   if (Array.isArray(r["duel-history-v1"])) history = r["duel-history-v1"];
   setMode(settings.mode);
   useFormat(settings.format);
+  $("enabled").checked = settings.enabled !== false; $("power-lbl").textContent = settings.enabled !== false ? "On" : "Off";
   $("auto").checked = settings.auto; $("strength").value = Math.round(settings.strength*100); $("strength-out").textContent = $("strength").value + "%"; $("side").value = settings.side;
   syncDeckUI(); connect();
 }).catch(noteError);

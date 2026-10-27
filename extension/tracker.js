@@ -16,11 +16,13 @@
   const PHASE = /^(Enter (BP|M2|EP|DP|SP|M1)|End turn)$/;
   const WINDOW_MS = 30000;
 
-  let settings = {auto:true, strength:0.7, side:"auto"};
+  let settings = {enabled:true, auto:true, strength:0.7, side:"auto"};
+  const on = () => settings.enabled !== false;
   let T = null, snap = null, hooked = false, events = 0, timer = 0, sendTimer = 0;
 
   // maxSeen: the most copies of each card identified at once this duel. Cards shuffled back into the deck still count.
-  function blank(key){ return {key, game:1, known:{}, wasSet:{}, sets:{}, nst:0, nmon:0, ev:{}, log:[], windows:[], lastTurn:0, maxSeen:{}, size:0, started:Date.now()}; }
+  // soft: hand cards marked known only because the duel log suggested it (see catchUp).
+  function blank(key){ return {key, game:1, known:{}, soft:{}, wasSet:{}, sets:{}, nst:0, nmon:0, ev:{}, log:[], windows:[], lastTurn:0, maxSeen:{}, size:0, started:Date.now()}; }
   function save(){ try { api.storage.local.set({[STORE]:T}).catch(noteError); } catch (e){ noteError(e); } }
 
   // ---------- Diagnostics ----------
@@ -56,14 +58,17 @@
   api.storage.local.get(["settings", STORE]).then(r => {
     if (r.settings) settings = Object.assign(settings, r.settings);
     // Restores the duel after a page reload. A duel already being tracked wins over a stale save.
-    if (r[STORE] && r[STORE].key && (!T || T.key === r[STORE].key)){ T = r[STORE]; T.maxSeen = T.maxSeen || {}; if (snap) onSnapshot(snap); }
-    toHook("side", settings.side);
+    if (!on()) T = null;
+    else if (r[STORE] && r[STORE].key && (!T || T.key === r[STORE].key)){ T = r[STORE]; T.maxSeen = T.maxSeen || {}; T.soft = T.soft || {}; if (snap) onSnapshot(snap); }
+    toHook("side", settings.side); toHook("pause", !on()); send();
   }).catch(noteError);
   api.storage.onChanged.addListener((ch, area) => {
     if (area !== "local" || !ch.settings) return;
-    const prevSide = settings.side;
+    const prevSide = settings.side, wasOn = on();
     settings = Object.assign(settings, ch.settings.newValue || {});
     if (settings.side !== prevSide){ toHook("side", settings.side); T = null; }
+    // Turning tracking off forgets the duel. Turning it back on starts over from the board and the duel log.
+    if (on() !== wasOn){ T = null; closeWindowsQuiet(); toHook("pause", !on()); if (!on()) api.storage.local.remove(STORE).catch(noteError); }
     send();
   });
   function toHook(kind, data){ window.postMessage({[TAG]:"tracker", kind, data}, "*"); }
@@ -88,10 +93,52 @@
     const game = T && T.key === key ? T.game + 1 : 1;
     T = blank(key); T.game = game; T.opp = s.opp;
     log(why || `Duel against ${s.opp} started.`);
+    // If this duel is already under way, DuelingBook's duel log fills in what happened before.
+    toHook("history");
+  }
+
+  // ---------- Catching up from the duel log ----------
+  // Reads this game's public log lines. Every card name in the opponent's lines proves their deck runs it.
+  // A card they sent to hand and haven't mentioned since is probably still there, so it's marked as known,
+  // softly: the mark moves off as soon as they play a copy of that card.
+  const GAME_START = /^Chose to go (first|second)$/;
+  const SKIP_LINE = /target|attack/i;
+  const TO_HAND = /\bto (?:the |their |your )?hand\b/i;
+  function catchUp(entries){
+    if (!T || !snap || !snap.ok || T.caughtUp || !Array.isArray(entries)) return;
+    let start = 0;
+    entries.forEach((e, i) => { if (GAME_START.test(e.text)) start = i; });
+    const game = entries.slice(start).filter(e => e.type === "duel" || GAME_START.test(e.text));
+    const opp = snap.opp, me = snap.me, toHand = {}, mentioned = {};
+    let plays = 0, turn = 0;
+    const earlier = [];
+    for (const e of game){
+      if (GAME_START.test(e.text)) turn = 1;
+      else if (e.text === "Entered Draw Phase") turn++;
+      if (e.u === opp || e.u === me) earlier.push({t:turn || 1, msg:`Earlier · ${e.u === opp ? "They" : "You"}: ${e.text}`});
+      if (e.u !== opp) continue;
+      plays++;
+      if (SKIP_LINE.test(e.text)) continue;
+      const names = [...e.text.matchAll(/"([^"]+)"/g)].map(m => m[1]);
+      for (const n of names){
+        mentioned[n] = true;
+        if (TO_HAND.test(e.text)) toHand[n] = (toHand[n] || 0) + 1;
+        else if (!/revealed/i.test(e.text) && toHand[n] > 0) toHand[n]--;
+      }
+    }
+    T.caughtUp = {plays, at:Date.now()};
+    if (!plays) return;
+    T.log.splice(0, 0, ...earlier.slice(-80));
+    for (const n in mentioned) T.maxSeen[n] = Math.max(T.maxSeen[n] || 0, 1);
+    const free = handIds(), inHand = [];
+    for (const n in toHand) for (let k = 0; k < toHand[n] && free.length; k++){ const id = free.shift(); T.known[id] = n; T.soft[id] = true; inHand.push(n); }
+    T.caughtUp.inHand = inHand;
+    log(`Caught up from DuelingBook's duel log: read ${plays} of their plays from before tracking started.` + (inHand.length ? ` Probably still in their hand: ${inHand.join(", ")}.` : ""));
+    save(); send();
   }
   function onSnapshot(s){
     const prev = snap; snap = s;
-    if (!s.ok){ send(); return; }
+    if (!s.ok || !on()){ send(); return; }
     const key = `${s.duelId || ""}|${s.me}|${s.opp}`;
     if (!T || T.key !== key) startDuel(s);
     // A cleared board with a refilled deck means the next game of the match began.
@@ -136,8 +183,14 @@
   }
   function onEvent(e){
     events++; hooked = true;
-    if (!T || !snap || !snap.ok) return;
-    if (e.who === "opp" && e.id && e.name && /^(Reveal|To hand)/.test(e.play) && !e.discreet) T.known[e.id] = e.name;
+    if (!on() || !T || !snap || !snap.ok) return;
+    T.soft = T.soft || {};
+    // They played a copy of a card the duel log put in their hand: that was probably the one.
+    if (e.who === "opp" && e.name && e.id && !T.soft[e.id]){
+      const sid = Object.keys(T.soft).find(id => T.known[id] === e.name);
+      if (sid){ delete T.soft[sid]; delete T.known[sid]; }
+    }
+    if (e.who === "opp" && e.id && e.name && /^(Reveal|To hand)/.test(e.play) && !e.discreet){ T.known[e.id] = e.name; delete T.soft[e.id]; }
     if (e.who === "opp"){
       if (e.play === "Thinking"){ armTimer(); return; }
       if (NEUTRAL.has(e.play)) return;
@@ -160,6 +213,7 @@
     if (T.windows.length) armTimer();
   }
   function armTimer(){ clearTimeout(timer); timer = setTimeout(() => { closeWindows(true); save(); send(); }, WINDOW_MS); }
+  function closeWindowsQuiet(){ clearTimeout(timer); }
   function closeWindows(commit){
     clearTimeout(timer);
     if (!T || !T.windows.length) return;
@@ -190,6 +244,7 @@
   function visible(){ const {pub, kh} = counts(); for (const n in kh) pub[n] = (pub[n] || 0) + kh[n]; return pub; }
   function view(){
     const base = {type:"view", hooked, events, settings};
+    if (!on()) return Object.assign(base, {state:"off"});
     if (!snap) return Object.assign(base, {state:"loading"});
     if (!snap.ok || !T) return Object.assign(base, {state:"idle", label:snap.label || "", error:snap.error || null});
     const {pub, kh} = counts();
@@ -210,7 +265,7 @@
     return Object.assign(base, {
       state:"duel", key:T.key, game:T.game, me:snap.me, opp:snap.opp, spectating:snap.spectating,
       turn:snap.turn, myTurn:snap.turnPlayer === snap.me, phase:snap.phase,
-      deck:snap.deck, extra:snap.extra, pub, kh, seen:T.maxSeen, hand, sets, lost, log:T.log.slice(-120), pending:T.windows.length,
+      deck:snap.deck, extra:snap.extra, pub, kh, seen:T.maxSeen, caughtUp:T.caughtUp && T.caughtUp.plays ? T.caughtUp : null, hand, sets, lost, log:T.log.slice(-120), pending:T.windows.length,
     });
   }
   function send(){
@@ -225,6 +280,7 @@
     if (ev.source !== window || !d || d[TAG] !== "hook") return;
     if (d.kind === "hooked"){ hooked = true; send(); }
     else if (d.kind === "error") noteError("Page hook: " + d.data);
+    else if (d.kind === "history") guard(catchUp)(d.data);
     else if (d.kind === "snapshot"){
       diag.snapshots++;
       if (d.data && d.data.error) noteError("Board read failed: " + d.data.error);

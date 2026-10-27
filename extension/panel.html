@@ -4,18 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>YGO Duel Odds</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="fonts.css">
 <link rel="stylesheet" href="panel.css">
 </head>
 <body class="idle">
 <header class="topbar">
   <div class="topbar-top">
     <div class="brand"><img src="icons/icon-32.png" alt="" width="22" height="22"><h1><span id="title">Goat</span> Duel Odds</h1></div>
-    <select class="fmt" id="format" aria-label="Format">
-      <option value="goat">Goat</option>
-      <option value="edison">Edison</option>
-    </select>
+    <div class="controls">
+      <label class="power" title="Turn tracking on or off">
+        <input type="checkbox" id="enabled" role="switch" checked aria-label="Tracking">
+        <span class="track" aria-hidden="true"></span><span class="power-lbl" id="power-lbl">On</span>
+      </label>
+      <select class="fmt" id="format" aria-label="Format">
+        <option value="goat">Goat</option>
+        <option value="edison">Edison</option>
+      </select>
+    </div>
   </div>
   <div class="conn" id="connbox"><span class="dot" id="dot"></span><span id="conn">Looking for a DuelingBook tab…</span></div>
   <div class="status" id="status"></div>
@@ -33,6 +38,11 @@
   <!-- Odds: what matters mid-duel, in the order you need it. -->
   <section class="pane" id="pane-odds" role="tabpanel" aria-labelledby="tab-odds">
     <div id="banner"></div>
+    <section class="panel off-card off-only">
+      <h2>Tracking is off</h2>
+      <p style="margin:0 0 10px">Nothing is being read or saved. Turn it on at any point, even in the middle of a duel: it reads the board and DuelingBook's duel log to catch up on what already happened.</p>
+      <button class="btn primary big" data-a="turnon">Turn tracking on</button>
+    </section>
     <section class="panel idle-card idle-only">
       <h2>Waiting for a duel</h2>
       <ol class="steps">
@@ -55,7 +65,7 @@
       <h2 id="h-hand">Their hand</h2>
       <div id="hand"></div>
     </section>
-    <section class="panel" aria-labelledby="h-next">
+    <section class="panel on-only" aria-labelledby="h-next">
       <h2 id="h-next">Their next draw</h2>
       <div id="next"></div>
     </section>

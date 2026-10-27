@@ -1,61 +1,196 @@
 # YGO Duel Odds
 
-Two single-page calculators for retro-format Yu-Gi-Oh! duels on DuelingBook. You log what your opponent does, and the page estimates what their face-down cards, hand and next draw are likely to be. It only uses public information.
+A helper for playing Yu-Gi-Oh! **Goat** and **Edison** format on [DuelingBook](https://www.duelingbook.com/). It sits next to your duel and shows the odds for what your opponent might have: each face-down card, their hand, their next draw, and which deck they're playing. It updates on its own as you play. You don't have to type anything in.
 
-- `goat-odds.html`: Goat format, with a sample Goat Control list.
-- `edison-odds.html`: Edison format, with a sample Blackwing list and hand-trap tracking for Gorz, Tragoedia and Battle Fader.
+![The panel during a duel](docs/panel-duel.png)
 
-Open either file in a browser. No build step or server is needed. Keep `cards.js` in the same folder.
+It only uses what both players can see on screen. It never peeks at your opponent's hidden cards. Some tournaments don't allow helper tools, so check the rules before using it in an event.
 
-## Browser extension
+- [Install it (about 5 minutes)](#install-it-about-5-minutes)
+- [Use it](#use-it)
+- [Turning it on partway through a duel](#turning-it-on-partway-through-a-duel)
+- [Something not working?](#something-not-working)
+- [What it can and can't see](#what-it-can-and-cant-see)
+- [For developers](#for-developers)
 
-`extension/` is a browser extension that does the logging for you. It runs in a panel next to DuelingBook and updates the odds as the duel happens. You don't press anything to log draws, sets, activations, searches or turns.
+## Install it (about 5 minutes)
 
-### Installing
+It works in **Chrome, Edge, Brave, Opera, Vivaldi** and **Firefox**. It isn't in any browser's add-on store yet, so you install it from a folder. That's what the steps below walk through.
 
-Download this repository (Code > Download ZIP) and unzip it, or clone it. Then:
+### Step 1: Download it
 
-| Browser | Steps | Where the panel opens |
-|---|---|---|
-| Chrome, Brave, Edge, Opera, Vivaldi | Open the extensions page (`chrome://extensions`, `brave://extensions`, `edge://extensions`, `opera://extensions` or `vivaldi://extensions`). Turn on Developer mode, click "Load unpacked" and choose the `extension` folder. | Side panel. On browsers without one, a small window. |
-| Firefox 128 or newer | Open `about:debugging#/runtime/this-firefox`, click "Load Temporary Add-on" and choose `extension/manifest.json`. Firefox removes temporary add-ons when it restarts, so repeat this each time. If the panel says it can't see DuelingBook, press "Allow access to DuelingBook". | Sidebar |
-| Safari | Not tested. Safari needs the extension converted with Xcode's `xcrun safari-web-extension-converter extension`. | — |
+1. Click this link: **[Download YGO Duel Odds](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip)**. A file called `ygo-duel-odds-main.zip` downloads.
+2. Unzip it:
+   - **Windows:** right-click the file, choose **Extract All**, then **Extract**.
+   - **Mac:** double-click the file.
+3. You now have a folder called `ygo-duel-odds-main`. Inside it is a folder called `extension`. Remember where it is, and don't delete it: the browser runs the extension from this folder.
 
-Then open DuelingBook, or reload it if it was already open, and click the extension's toolbar button to open the panel. Pick Goat or Edison at the top. You don't need your opponent's decklist: the panel guesses it as the duel goes. If you have their list, paste it under "Their deck" > "Opponent decklist" and the panel uses it instead.
+### Step 2: Add it to your browser
 
-The panel has four tabs. **Odds** has the at-a-glance threats, every face-down card, their hand and their next draw. **Their deck** has the deck guess and the decklist. **Log** shows the duel as the extension saw it. **Settings** has the "no response" options, tracking options and the problem report.
+**Chrome, Edge, Brave, Opera or Vivaldi**
+
+1. Open a new tab and type the address for your browser into the address bar, then press Enter:
+   - Chrome: `chrome://extensions`
+   - Edge: `edge://extensions`
+   - Brave: `brave://extensions`
+   - Opera: `opera://extensions`
+   - Vivaldi: `vivaldi://extensions`
+2. Turn on **Developer mode**. It's a switch in the top-right corner of the page. In Edge it's on the left.
+3. Click **Load unpacked**.
+4. Find the `ygo-duel-odds-main` folder, click the **`extension`** folder inside it once, and click **Select** (or **Open**).
+5. "YGO Duel Odds" now appears in the list. It may show a yellow "warnings" note. That's expected and safe to ignore.
+6. Pin it so it's easy to find. Click the puzzle-piece icon next to the address bar, then the pin next to "YGO Duel Odds". Its icon is a card with an eye on it.
+
+**Firefox** (version 128 or newer)
+
+1. Type `about:debugging#/runtime/this-firefox` into the address bar and press Enter.
+2. Click **Load Temporary Add-on…**.
+3. Open the `ygo-duel-odds-main` folder, then the `extension` folder, and pick the file called **`manifest.json`**.
+4. Firefox only keeps add-ons installed this way until you close Firefox. Each time you reopen it, repeat these three steps.
+
+### Step 3: Open the panel
+
+1. Go to [duelingbook.com](https://www.duelingbook.com/). If it was already open, reload the page so the extension can start.
+2. Click the extension's icon, the card with an eye. A panel opens on the side of the window. In Firefox it's the sidebar. In browsers without a side panel, it opens as a small window.
+3. **Firefox only:** if the panel says it can't see DuelingBook, click **Allow access to DuelingBook**, then reload the DuelingBook page.
+4. Pick **Goat** or **Edison** from the menu in the top-right of the panel.
+
+That's it. Start or watch a duel and the panel fills in by itself.
+
+## Use it
+
+### The on/off switch
+
+The switch at the top of the panel turns tracking on and off.
+
+- **On** (green): it follows the duel and keeps the odds up to date.
+- **Off** (grey): it reads nothing and saves nothing. The toolbar icon shows **OFF**, so you can tell at a glance.
+
+![The panel with tracking off](docs/panel-off.png)
+
+You can switch it on whenever you like, including in the middle of a duel. See [Turning it on partway through a duel](#turning-it-on-partway-through-a-duel).
+
+### The four tabs
+
+- **Odds**: what you need mid-duel.
+  - **At a glance** has the big risks: whether their face-down spells or traps can stop an attack or answer a summon, and whether their hand holds removal.
+  - **Face-down cards** lists each card they've set, with the cards it's most likely to be.
+  - **Their hand** lists what they're likely holding. Cards you saw them add to their hand are marked "known".
+  - **Their next draw** lists the cards they're most likely to draw next.
+- **Their deck**: the deck they're most likely playing, the cards it usually runs, and a place to paste their decklist if you have it.
+- **Log**: everything the extension has noticed, in order, newest first. The number on the tab counts new entries.
+- **Settings**: the "no response" options, tracking options, and **Report a problem**.
+
+### Reading the numbers
+
+- **"Royal Decree 14%"** under a face-down card means: out of every 100 situations that match everything seen so far, that card is Royal Decree in about 14.
+- **"Holds one+ 25%"** in their hand means a 1-in-4 chance they're holding at least one copy.
+- **Red** means likely, **orange** means maybe, and **green** means unlikely.
+
+The numbers sharpen as the duel goes on and they show more of their deck.
+
+### "What they didn't do"
+
+When you attack, summon, or activate a spell or trap and your opponent doesn't respond, that's a clue. They probably don't have a card that would have stopped it. The extension notices this by itself and lowers the odds of those cards. The adjustment appears as a small tag under the face-down card, such as "Auto: Ignored an attack 70%".
+
+- To undo one, click its tag.
+- To rule out a card for one face-down card, click the **✕** next to that card.
+- The buttons under **What they didn't do** on the Odds tab are for things the extension can't see, like "Left my backrow alone".
+- You can turn the automatic version off, or make it stronger or weaker, in **Settings**.
+
+### If you know their decklist
+
+You don't need it, because the extension guesses their deck as they play. If you do have it:
+
+1. Open the **Their deck** tab and click **Opponent decklist**.
+2. Paste the list, one card per line (like `3 Book of Moon`), or click **Open a .ydk or text file**.
+3. Click **Load list**.
+
+To go back to guessing, choose **Guess it from what they play** in the same place.
+
+## Turning it on partway through a duel
+
+Switch it on at any point, or open the panel mid-duel, and it catches up by itself:
+
+1. It reads the board as it is right now: their hand and deck size, every face-down card, and everything in the graveyard and banished.
+2. It reads DuelingBook's own **Duel Log** for this game. Any card your opponent showed earlier counts as part of their deck. A card they added to their hand, and haven't used since, is marked as probably still in their hand.
+3. The earlier plays show up in the **Log** tab, marked "Earlier".
+
+There are two things it can't recover from before you switched it on:
+
+- **"No response" moments.** It doesn't know which of your attacks they let through earlier. You can add these by hand with the buttons under **What they didn't do**.
+- **Earlier face-down cards.** It doesn't know whether a card in their hand was once set face-down.
+
+A note at the top of the Odds tab tells you when this happens.
+
+## Something not working?
+
+| What you see | What to do |
+|---|---|
+| "Looking for a DuelingBook tab…" | Open [duelingbook.com](https://www.duelingbook.com/) in the same browser window. If it's already open, reload it. |
+| "Connected… Waiting for a duel to start" | This is normal until a duel begins. Start or watch a duel. |
+| "Tracking is off" | Flip the switch at the top of the panel to **On**. |
+| "The extension can't see DuelingBook yet" (Firefox) | Click **Allow access to DuelingBook**, then reload the DuelingBook page. |
+| "Duel events aren't coming through" | DuelingBook may have updated. The board is still read, but "no response" isn't logged automatically. Please [report it](#reporting-a-problem). |
+| The extension disappeared (Firefox) | Firefox removes add-ons installed this way when it closes. Repeat [Step 2](#step-2-add-it-to-your-browser). |
+| The numbers look wrong | Open **Settings** and click **Restart tracking from the current board**. If it's still wrong, [report it](#reporting-a-problem). |
+| The panel is blank or stuck | Close the panel and open it again. If that doesn't help, reload DuelingBook. |
 
 ### Reporting a problem
 
-Click "Report a problem" at the bottom of the panel. The report page attaches what the extension saw: versions, whether duel events are coming through, recent errors and the last few plays. Player names are replaced with "Me" and "Opponent" unless you untick that option. Nothing is sent until you choose to. "Open a GitHub issue" opens a prefilled issue on this repository for you to review and submit, and "Copy report" and "Download report" work without a GitHub account.
+Click **Report a problem** at the bottom of the panel.
 
-What it reads, all public information:
+1. Describe what went wrong in a sentence or two.
+2. Check what's attached. It's a summary of what the extension saw: versions, recent errors and the last few plays. Player names are swapped for "Me" and "Opponent" unless you untick that box.
+3. Choose how to send it:
+   - **Open a GitHub issue**: opens a filled-in report on the project page. Read it, then press **Submit**. You need a free GitHub account.
+   - **Copy report**: copies it so you can paste it into a message to whoever gave you the extension.
+   - **Download report**: saves it as a file you can send.
 
-- Their hand size, deck size, every face-down card, and every card that is face-up, in the graveyard or banished.
-- Cards they reveal, or add to their hand in a way both players can see, such as a search. These count as known cards in their hand.
-- A face-down card that goes back to their hand unseen keeps its "was set" weighting.
+Nothing is sent until you do one of these.
 
-It never reads the names of cards in their hand or face-down cards that DuelingBook hasn't shown to both players.
+## What it can and can't see
 
-How the deck guess works:
+It reads only what DuelingBook shows to both players:
 
-- It starts from a mix of deck archetypes, plus decks from your past duels. An earlier game against the same opponent counts most. The archetypes are learned from Goat and Edison decklists and stored in `extension/learned.js`. Topping decks from Format Library count most, and decks published on YGOPRODeck fill in the rest. Without that file, it falls back to rough sketches written from memory in `extension/formats.js`.
-- Each deck gives every card a chance of running 0, 1, 2 or 3 copies.
-- Every card they show shifts the mix toward decks that run it. Every card that hasn't appeared yet, as more of their deck gets seen, makes it less likely they run many copies.
-- Each simulated deal draws a full 40-card list from the guess before dealing out their hidden cards. That way, uncertainty about the list feeds into every number.
-- "Their deck" shows which deck they're most likely on and the best-guess list. You can copy the guess into the decklist box to edit it.
+- How many cards your opponent has in their hand and deck.
+- Every face-down card's position.
+- Every card that's face-up, in the graveyard or banished.
+- Cards they reveal, or add to their hand where both players can see them, such as a search.
+- DuelingBook's public duel log.
 
-"No response" evidence is logged automatically. When you attack, summon, or activate a spell or trap, and they make no play before your next action, their face-down cards get evidence against cards that would have responded. An attack also adds evidence against hand traps. Any play they make in between, including a chat message, cancels it. You can turn this off, set how strong the evidence is, and remove any single piece of evidence in the panel.
+It never reads the names of cards in your opponent's hand, or of face-down cards that haven't been shown to both players. It doesn't read passwords, account details or private messages. Everything stays in your browser, except the decks from your past duels, which it keeps on your computer to make better guesses.
 
-The extension hooks into DuelingBook's own page code. If DuelingBook changes that code, the panel says that duel events aren't coming through. Board reading may still work in that case, but "no response" won't be logged automatically.
+How the deck guess works: the extension learned what Goat and Edison decks look like from about 3,500 decklists that placed in tournaments, plus about 2,500 decklists people have posted online. Tournament decks count the most. During a duel, every card your opponent shows narrows down which of those decks they're likely playing. Decks you've faced before count too, and an earlier game against the same opponent counts the most.
 
-## Any decklist
+## For developers
 
-Paste a list of card names like `3 Book of Moon`, or paste or open a `.ydk` file. Every printed card is recognized through `cards.js`, a database built from the YGOPRODeck card API. Extra Deck and Side Deck cards are skipped. If the opponent reveals a card that isn't in their list, it's added automatically.
+### What's in the repository
 
-Common staples use hand-tuned values in each page. For every other card, the chance it gets set and the tags (stops attacks, answers summons, removal, negation, hand trap) are guessed from its text. You can adjust them in the page.
+| Path | What it is |
+|---|---|
+| `extension/` | The browser extension (Manifest V3, Chromium and Firefox 128+). |
+| `goat-odds.html`, `edison-odds.html` | The original single-page calculators. You log what the opponent does by hand. Open either in a browser, with `cards.js` in the same folder. Keyboard shortcuts: D draw, S set spell/trap, M set monster, E end turn, Z undo. |
+| `cards.js` | Card database built from the YGOPRODeck API. `extension/cards.js` is a copy. |
+| `tools/build_cards.py` | Builds `cards.js`. |
+| `tools/train_decks.py` | Learns the deck archetypes in `extension/learned.js`. |
+| `tools/make_icons.py` | Draws the toolbar icons. |
 
-To refresh the card database after new sets come out:
+### How the extension works
+
+- **`page-hook.js`** runs in DuelingBook's page context. It wraps the client's `duelResponse()`, through which every duel event passes, and reads the board from the client's `player1` and `player2` objects. It passes on only public information: names of face-up and revealed cards, never names from hand or face-down cards. It also returns the public text of the client's `duel_logs` when asked.
+- **`tracker.js`** is a content script. It keeps the public identity of each card instance and the numbering of face-down cards. It detects "no response" by opening a window after your attack, summon or spell/trap activation, which closes on your next action or on any play by the opponent. When tracking starts partway through a duel, it catches up from `duel_logs`:
+  - Every quoted card name in the opponent's lines is counted as at least one copy in their deck. Lines about targeting or attacking are skipped, because they name the other player's cards.
+  - A card sent "to hand" and not mentioned since is softly marked as known in their hand. The mark moves off when they play a copy of it.
+- **`panel.js`** runs the model and draws the panel.
+  - With no decklist, the opponent's deck is a mixture of archetypes from `learned.js` and decks from your past duels. Each archetype gives every card a distribution over 0–3 copies.
+  - Each card shown reweights the archetypes and updates copy counts through a binomial model of how much of the deck has been seen.
+  - Each of 15,000 simulated deals samples a whole deck, conditioned on the deck size DuelingBook shows. It then deals the hidden cards with importance weights from the face-down and hand evidence.
+- **`report.html`** gathers diagnostics from the panel and the DuelingBook tab, and opens a prefilled GitHub issue.
+
+If DuelingBook changes its client, the panel says duel events aren't coming through. Board reading may keep working in that case.
+
+### Refreshing the card database
 
 ```
 curl -o cardinfo.json https://db.ygoprodeck.com/api/v7/cardinfo.php
@@ -63,7 +198,9 @@ python3 tools/build_cards.py cardinfo.json cards.js
 cp cards.js extension/cards.js
 ```
 
-## Retraining the deck archetypes
+Common staples use hand-tuned values in `extension/formats.js` and the two calculator pages. For every other card, the chance it gets set and its tags are guessed from its text: stops attacks, answers summons, removal, negation, hand trap.
+
+### Retraining the deck archetypes
 
 ```
 python3 tools/train_decks.py            # uses cached decklists if there are any
@@ -77,12 +214,4 @@ It uses two sources:
 - **Topping decks from Format Library.** These are tournament results labeled with their deck type. Each one counts as 4 published decks, with more for higher placements. Older events count for less, losing half their weight every 2 years. Each deck type with at least 8 topping decks becomes its own archetype.
 - **Decks published on YGOPRODeck.** These are dropped if they have unknown cards, aren't 40 to 60 cards, include a card released after the format's cutoff, break the Goat banlist, or duplicate another deck.
 
-A semi-supervised latent class model then fits a 0 to 3 copy distribution for every card in each archetype. Labeled topping decks train only their own archetype. Published decks are shared out among those archetypes and a few extra ones for decks that don't match a known type. The number of extra archetypes is picked by how well the model predicts held-out decks. Each archetype's starting weight in the panel is 80% its share of topping lists and 20% its share of published decks. The script writes `extension/learned.js`.
-
-## How it works
-
-Every card in the opponent's list that you haven't seen is treated as equally likely to be in their hand, face-down on the field, or in their deck. Face-down cards add rules: set monsters must be monsters, and traps are far more likely to be set than cards like Pot of Greed. Logging what they didn't do, such as ignoring an attack, lowers the odds of cards that would have responded. The page simulates 30,000 deals that fit everything logged and reports the results.
-
-The sample decklists were written from memory. Paste your opponent's real list under "Opponent decklist".
-
-Keyboard shortcuts: D draw, S set spell/trap, M set monster, E end turn, Z undo.
+A semi-supervised latent class model then fits a 0 to 3 copy distribution for every card in each archetype. Labeled topping decks train only their own archetype. Published decks are shared out among those archetypes and a few extra ones for decks that don't match a known type. The number of extra archetypes is picked by how well the model predicts held-out decks. Each archetype's starting weight in the panel is 80% its share of topping lists and 20% its share of published decks.

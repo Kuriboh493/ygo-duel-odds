@@ -8,11 +8,13 @@
 
   const TAG = "__ygoOdds";
   const post = (kind, data) => window.postMessage({[TAG]:"hook", kind, data}, "*");
-  let sideOverride = "auto";
+  let sideOverride = "auto", paused = false;
   window.addEventListener("message", ev => {
     const d = ev.data;
     if (ev.source !== window || !d || d[TAG] !== "tracker") return;
     if (d.kind === "side"){ sideOverride = d.data || "auto"; lastSig = ""; }
+    if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
+    if (d.kind === "history") post("history", history());
     if (d.kind === "resend"){ lastSig = ""; if (window.duelResponse && window.duelResponse.__ygoOdds) post("hooked", true); }
   });
 
@@ -92,8 +94,18 @@
     };
   }
 
+  // DuelingBook's own duel log, for catching up when tracking starts partway through a duel.
+  // Only the public text is passed on: the same lines both players see in the Duel Log window.
+  function history(){
+    try {
+      const L = typeof duel_logs !== "undefined" && Array.isArray(duel_logs) ? duel_logs : [];
+      return L.filter(e => e && !e.hidden).map(e => ({u: e.username || null, type: e.type || null, text: String(e.public_log || "")}));
+    } catch (e){ return []; }
+  }
+
   let lastSig = "";
   function tick(){
+    if (paused) return;
     let snap;
     try { snap = snapshot(); } catch (e){ snap = {ok:false, error:String(e && e.message || e)}; }
     const sig = JSON.stringify(snap);
@@ -117,7 +129,7 @@
     const orig = window.duelResponse;
     const wrapped = function(data){
       // The board as it was just before this play goes first, so the tracker sees what the play responded to.
-      try { if (data && data.play){ tick(); post("event", summarize(data)); } } catch (e){ post("error", String(e && e.message || e)); }
+      try { if (data && data.play && !paused){ tick(); post("event", summarize(data)); } } catch (e){ post("error", String(e && e.message || e)); }
       return orig.apply(this, arguments);
     };
     wrapped.__ygoOdds = true;
