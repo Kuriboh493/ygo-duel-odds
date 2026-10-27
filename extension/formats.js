@@ -295,3 +295,270 @@ Extra Deck
 1 Stardust Dragon
 1 Black-Winged Dragon`
 };
+
+// Archetype sketches used when no decklist is pasted. They were written from memory as rough starting points;
+// the guess shifts toward whatever the opponent actually shows, and toward decks seen in your past duels.
+FORMATS.goat.archetypes = [
+  {name:"Goat Control", list:FORMATS.goat.sample},
+  {name:"Chaos Warrior", list:`1 Black Luster Soldier - Envoy of the Beginning
+1 Chaos Sorcerer
+2 D.D. Warrior Lady
+1 Exiled Force
+1 Mystic Swordsman LV2
+1 Blade Knight
+1 Breaker the Magical Warrior
+1 Tribe-Infecting Virus
+1 Jinzo
+1 Sinister Serpent
+1 Sangan
+1 Magician of Faith
+1 Don Zaloog
+1 Spirit Reaper
+1 Asura Priest
+1 Freed the Matchless General
+1 Pot of Greed
+1 Graceful Charity
+1 Heavy Storm
+1 Mystical Space Typhoon
+1 Snatch Steal
+1 Delinquent Duo
+1 Premature Burial
+1 Nobleman of Crossout
+2 Reinforcement of the Army
+2 Book of Moon
+1 Smashing Ground
+1 Enemy Controller
+1 Scapegoat
+2 Sakuretsu Armor
+1 Mirror Force
+1 Torrential Tribute
+1 Ring of Destruction
+1 Call of the Haunted
+1 Solemn Judgment
+1 Bottomless Trap Hole`},
+  {name:"Flip Control", list:`1 Black Luster Soldier - Envoy of the Beginning
+1 Chaos Sorcerer
+1 Magician of Faith
+2 Old Vindictive Magician
+2 Night Assailant
+1 Penguin Soldier
+1 Morphing Jar
+1 Sangan
+1 Sinister Serpent
+2 Tsukuyomi
+1 Breaker the Magical Warrior
+1 Tribe-Infecting Virus
+1 Spirit Reaper
+1 Apprentice Magician
+1 Pot of Greed
+1 Graceful Charity
+1 Heavy Storm
+1 Mystical Space Typhoon
+1 Snatch Steal
+1 Delinquent Duo
+1 Premature Burial
+1 Nobleman of Crossout
+2 Book of Moon
+1 Scapegoat
+1 Swords of Revealing Light
+1 Book of Taiyou
+1 Smashing Ground
+2 Sakuretsu Armor
+1 Mirror Force
+1 Torrential Tribute
+1 Ring of Destruction
+1 Call of the Haunted
+1 Solemn Judgment
+1 Magic Cylinder
+1 Dust Tornado`},
+  {name:"Monarch", list:`2 Zaborg the Thunder Monarch
+1 Thestalos the Firestorm Monarch
+2 Mobius the Frost Monarch
+1 Black Luster Soldier - Envoy of the Beginning
+1 Chaos Sorcerer
+1 Breaker the Magical Warrior
+1 Tribe-Infecting Virus
+1 Sangan
+1 Magician of Faith
+1 Sinister Serpent
+1 Spirit Reaper
+1 D.D. Warrior Lady
+1 Morphing Jar
+1 Tsukuyomi
+1 Mystic Tomato
+1 Pot of Greed
+1 Graceful Charity
+1 Heavy Storm
+1 Mystical Space Typhoon
+1 Snatch Steal
+1 Delinquent Duo
+1 Premature Burial
+1 Nobleman of Crossout
+2 Book of Moon
+2 Scapegoat
+1 Enemy Controller
+1 Soul Exchange
+2 Sakuretsu Armor
+1 Mirror Force
+1 Torrential Tribute
+1 Ring of Destruction
+1 Call of the Haunted
+1 Solemn Judgment
+1 Royal Decree
+1 Dust Tornado`},
+];
+FORMATS.edison.archetypes = [
+  {name:"Blackwing", list:FORMATS.edison.sample},
+  {name:"Lightsworn", list:`3 Ryko, Lightsworn Hunter
+2 Lumina, Lightsworn Summoner
+2 Lyla, Lightsworn Sorceress
+1 Garoth, Lightsworn Warrior
+1 Ehren, Lightsworn Monk
+1 Jain, Lightsworn Paladin
+2 Wulf, Lightsworn Beast
+1 Celestia, Lightsworn Angel
+2 Judgment Dragon
+1 Necro Gardna
+1 Gorz the Emissary of Darkness
+1 Honest
+2 Charge of the Light Brigade
+2 Solar Recharge
+1 Monster Reborn
+1 Heavy Storm
+2 Mystical Space Typhoon
+1 Brain Control
+1 Book of Moon
+1 Gold Sarcophagus
+1 Mirror Force
+1 Torrential Tribute
+1 Solemn Judgment
+1 Solemn Warning
+2 Bottomless Trap Hole
+2 Dimensional Prison
+1 Trap Dustshoot
+1 Call of the Haunted
+1 Mind Crush`},
+  {name:"Zombie", list:`3 Goblin Zombie
+2 Zombie Master
+2 Mezuki
+1 Plaguespreader Zombie
+1 Il Blud
+2 Card Trooper
+1 Gorz the Emissary of Darkness
+1 Armageddon Knight
+1 Tragoedia
+1 Battle Fader
+1 Book of Life
+1 Foolish Burial
+1 Monster Reborn
+1 Heavy Storm
+2 Mystical Space Typhoon
+1 Brain Control
+1 Book of Moon
+1 Gold Sarcophagus
+1 Pot of Avarice
+1 Burial from a Different Dimension
+1 One for One
+1 Smashing Ground
+1 Giant Trunade
+1 Mirror Force
+1 Torrential Tribute
+1 Solemn Judgment
+1 Solemn Warning
+2 Bottomless Trap Hole
+2 Dimensional Prison
+1 Call of the Haunted
+1 Trap Dustshoot
+1 Mind Crush`},
+  {name:"Quickdraw Plant", list:`3 Quickdraw Synchron
+3 Lonefire Blossom
+1 Spore
+1 Glow-Up Bulb
+1 Dandylion
+2 Debris Dragon
+1 Plaguespreader Zombie
+2 Card Trooper
+1 Gorz the Emissary of Darkness
+1 Tragoedia
+1 Armageddon Knight
+1 Sangan
+1 One for One
+1 Foolish Burial
+1 Monster Reborn
+1 Heavy Storm
+2 Mystical Space Typhoon
+1 Brain Control
+1 Book of Moon
+1 Pot of Avarice
+1 Gold Sarcophagus
+1 Burial from a Different Dimension
+1 Dark Hole
+1 Mirror Force
+1 Torrential Tribute
+1 Solemn Judgment
+1 Solemn Warning
+2 Bottomless Trap Hole
+1 Dimensional Prison
+1 Trap Dustshoot
+1 Mind Crush
+1 Call of the Haunted`},
+  {name:"Frog Monarch", list:`1 Treeborn Frog
+2 Swap Frog
+2 Ronintoadin
+1 Dupe Frog
+3 Caius the Shadow Monarch
+2 Raiza the Storm Monarch
+1 Zaborg the Thunder Monarch
+1 Gorz the Emissary of Darkness
+1 Battle Fader
+1 Cyber Dragon
+1 Sangan
+2 Enemy Controller
+1 Brain Control
+2 Soul Exchange
+1 Foolish Burial
+1 Monster Reborn
+1 Heavy Storm
+2 Mystical Space Typhoon
+1 Book of Moon
+1 Giant Trunade
+1 Pot of Avarice
+1 Gold Sarcophagus
+1 Mirror Force
+1 Torrential Tribute
+1 Solemn Judgment
+1 Solemn Warning
+2 Bottomless Trap Hole
+2 Dimensional Prison
+1 Trap Dustshoot
+1 Mind Crush`},
+  {name:"Gladiator Beasts", list:`2 Gladiator Beast Laquari
+3 Gladiator Beast Bestiari
+2 Gladiator Beast Darius
+1 Gladiator Beast Equeste
+1 Gladiator Beast Murmillo
+2 Test Tiger
+1 Gladiator Beast Hoplomus
+1 Gorz the Emissary of Darkness
+1 Gladiator Proving Ground
+1 Reinforcement of the Army
+1 Monster Reborn
+1 Heavy Storm
+2 Mystical Space Typhoon
+1 Brain Control
+1 Book of Moon
+1 Gold Sarcophagus
+2 Enemy Controller
+1 Smashing Ground
+1 Giant Trunade
+1 Swords of Revealing Light
+3 Gladiator Beast War Chariot
+1 Solemn Judgment
+1 Solemn Warning
+1 Torrential Tribute
+1 Mirror Force
+2 Bottomless Trap Hole
+2 Dimensional Prison
+1 Trap Dustshoot
+1 Mind Crush`},
+];
