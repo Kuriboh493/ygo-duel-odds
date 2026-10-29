@@ -17,7 +17,7 @@ No extra packages are needed.
 import argparse, json, math, random, sys, time
 from collections import Counter, defaultdict
 
-FEATURES_VERSION = 1
+FEATURES_VERSION = 4
 
 # ---------- Features: a line-for-line copy of extension/features.js ----------
 def f_num(x):
@@ -81,9 +81,33 @@ def featurize(rec, cand):
         p + "|mlp:" + f_bucket(f_num(me.get("lp")), [0, 1000, 2000, 4000, 8000]),
         p + "|lv:" + f_level(c),
     ]
+    last = rec.get("lastPlay") or "none"
+    out.append(p + "|last:" + last)
+    if rec.get("lastCard"):
+        out.append(p + "|last:" + last + "|ln:" + rec["lastCard"])
+    out.append(p + "|dr:" + str(min(f_num(rec.get("drawsThisTurn")) or 0, 5)))
+    out.append(p + "|dc:" + str(min(f_num(rec.get("discardsThisTurn")) or 0, 3)))
+    for h in rec.get("turnHistory") or []:
+        out.append(p + "|did:" + h)
+    myst = len([x for x in (me.get("st") or []) if x and x.get("pos") == "FD"])
+    ostn = len(opp.get("st") or [])
+    out.append(p + "|stc:" + ("more" if ostn > myst else "same" if ostn == myst else "fewer"))
+    if c.get("ctype") == "Monster":
+        ups = [v for v in (f_num(x.get("atk")) for x in (opp.get("mon") or []) if x and x.get("pos") != "FD") if v is not None]
+        a = f_num(c.get("atk"))
+        out.append(p + "|vs:" + ("na" if a is None else "empty" if not ups else "win" if a > max(ups) else "lose"))
+    ofd = min(len([x for x in (opp.get("mon") or []) if x and x.get("pos") == "FD"]), 2)
+    gyld = ("L" if (f_num(me.get("gyLight")) or 0) > 0 else "-") + ("D" if (f_num(me.get("gyDark")) or 0) > 0 else "-")
+    out.append(p + "|ofd:" + str(ofd))
     if c.get("name"):
-        out.append(p + "|n:" + c["name"])
-        out.append(p + "|n:" + c["name"] + "|ph:" + ph)
+        n = p + "|n:" + c["name"]
+        out.append(n)
+        out.append(n + "|ph:" + ph)
+        out.append(n + "|om:" + str(min(len(opp.get("mon") or []), 3)))
+        out.append(n + "|ofd:" + str(ofd))
+        out.append(n + "|ost:" + str(ost))
+        out.append(n + "|oh:" + f_bucket(f_num(opp.get("hand")) or 0, [0, 1, 3, 5]))
+        out.append(n + "|gy:" + gyld)
     t = cand.get("target")
     if t:
         b = f_battle(c, t)

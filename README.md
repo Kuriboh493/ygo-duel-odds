@@ -194,6 +194,28 @@ It takes a few seconds to a few minutes. When it finishes, it tells you how ofte
 
 **4. Load it.** Under **Learning**, press **Load a trained model** and pick `policy.json`. Then choose **Learned model** under **What it should do**, start a Solo Mode duel, and press **Start**.
 
+**No recordings yet?** Load the ready-made starter model, `models/goat-starter.json`, from the [full project download](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip). It was trained on 500 simulated games, and in 300 test games against the scripted player it won 107 and lost 152, with 41 reaching the turn limit. Or train your own from simulated games. `tools/sim_goat.py` deals games between four standard Goat decks:
+
+- Chaos Control, from flosel74's winning list at the 2026 World Championship
+- Gumo Warrior, from Ez2Slayu's 2nd-place list
+- Warrior, from Leuh's top 4 list
+- Chaos Turbo, from Joker88's list that won Last Chance Qualifier 3 2026
+
+A scripted player plays them using common rules of thumb, and the model learns those habits:
+
+```
+python3 tools/sim_goat.py --games 500 -o sim-training.json
+python3 tools/train_policy.py sim-training.json
+```
+
+It plays sensibly but simply, because it can only learn what the script does. A model trained on your own duels will play more like you. You can also train on both files at once.
+
+To see how a model plays, rather than how often it copies, test it against the scripted player:
+
+```
+python3 tools/sim_goat.py --eval --games 300 --model policy.json
+```
+
 Some safety rules always apply when it plays:
 
 - It never makes a kind of play it has never seen you make.
@@ -259,6 +281,9 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
 | `tools/build_safari.sh` | Builds the Safari app with Xcode. The GitHub workflows run it on a macOS runner. |
 | `tools/train_policy.py` | Trains the auto-play model from recorded decisions. |
 | `tools/test_features.py` | Checks that the Python and JavaScript copies of the model's features match. |
+| `tools/sim_goat.py` | A simplified Goat simulator that writes training decisions from a scripted player, and tests a trained model against that player. |
+| `tools/decks/` | The four standard decklists the simulator uses. Add more `.txt` lists in the same format and it uses them too. |
+| `models/goat-starter.json` | A model trained on simulated games with those decks, ready to load in the Auto tab. |
 
 ### How the extension works
 
@@ -283,6 +308,14 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
     `tracker.js` stores the records in chunks, capped at 40,000.
   - `features.js` turns a record into features for each candidate: the play type crossed with the phase, zone, card name, hand size, board counts and life points, plus battle outcome for attacks. `tools/train_policy.py` has a line-for-line Python copy, and `tools/test_features.py` checks the two agree using macOS's JavaScript engine. Records keep the raw situation rather than features, so the features can change without re-recording. Bump `FEATURES_VERSION` in both when they do.
   - `train_policy.py` fits a linear softmax ranker over each decision's candidates with AdaGrad and L2, holding out 20% of duels. It reports top-1 and top-3 accuracy against random and most-common-play baselines, then refits on everything and exports the weights. No packages are needed.
+  - `tools/sim_goat.py` simulates games with the lists in `tools/decks/`:
+    - It models turns, tributes, battle and the effects of the cards in those decks, simplified.
+    - It handles DuelingBook's manual follow-ups, like the two draws after Pot of Greed and the discards after Graceful Charity.
+    - The defending player's traps follow fixed habits.
+    - The scripted player's decisions are written as records, with candidates named as DuelingBook's menus name them.
+    - `--model policy.json --eval` plays the trained model against the scripted player, using the same guards as the extension, and reports the win rate.
+
+    It's a rough model of the game, not a rules engine: chains are one link deep, and effects outside those decks do nothing.
   - `autoplay.js` runs the loop in the panel. A strategy is an entry in `STRATEGIES` with a `decide(state)` function that returns an action or `null`. The comment at the top of the file lists what `state` holds and what an action looks like.
 - **`report.html`** gathers diagnostics from the panel and the DuelingBook tab, and opens a prefilled GitHub issue.
 

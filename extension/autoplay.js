@@ -38,8 +38,9 @@ function actionFromKey(key){
 }
 const MAX_PLAYS_PER_TURN = 40;
 // How often the same play may be made in one turn: each card play once (one attack per monster, for instance),
-// deck plays a few times (Pot of Greed draws twice), each phase change once.
-const MAX_REPEATS = {card: 1, deck: 3, global: 1};
+// deck plays up to 8 times (a turn can legally draw 6 or more: the normal draw, Pot of Greed, Graceful Charity, Jar of Greed),
+// each phase change once.
+const MAX_REPEATS = {card: 1, deck: 8, global: 1};
 // Attacking a monster and attacking directly count as the same play, since a monster gets one attack a turn.
 const repeatKey = key => { const [kind, id, play] = key.split("|"); return kind === "card" && /^Attack/.test(play) ? `card|${id}|attack` : key; };
 const STRATEGIES = {

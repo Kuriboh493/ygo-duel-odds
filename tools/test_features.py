@@ -10,9 +10,10 @@ from train_policy import featurize
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 mon = lambda n, atk, d, pos="ATK", lvl=4: {"name": n, "ctype": "Monster", "zone": "monster", "pos": pos, "atk": atk, "def": d, "level": lvl}
 FIXTURES = [
-    {"phase": "M1", "myTurn": True, "turn": 3, "playsThisTurn": 2, "summonsThisTurn": 1,
-     "me": {"lp": 8000, "deck": 30, "hand": [{"name": "Sangan"}] * 4, "mon": [mon("Sangan", 1000, 600)], "st": [], "gy": 2, "ban": 0},
-     "opp": {"lp": 3500, "deck": 31, "hand": 5, "mon": [{"pos": "FD"}], "st": [{"pos": "FD"}, {"pos": "FD"}], "gy": 1, "ban": 0},
+    {"phase": "M1", "myTurn": True, "turn": 3, "playsThisTurn": 2, "summonsThisTurn": 1, "drawsThisTurn": 4, "discardsThisTurn": 1, "lastPlay": "Activate ST", "lastCard": "Pot of Greed",
+     "turnHistory": ["Draw card:", "Activate ST:Graceful Charity", "To GY:Sangan"],
+     "me": {"lp": 8000, "deck": 30, "hand": [{"name": "Sangan"}] * 4, "mon": [mon("Sangan", 1000, 600)], "st": [], "gy": 2, "gyLight": 1, "gyDark": 0, "ban": 0},
+     "opp": {"lp": 3500, "deck": 31, "hand": 5, "mon": [{"pos": "FD"}, {"name": "Sangan", "pos": "ATK", "atk": 1000, "def": 600}], "st": [{"pos": "FD"}, {"pos": "FD"}], "gy": 1, "ban": 0},
      "cands": [
          {"key": "card|1|Normal Summon", "play": "Normal Summon", "card": {"name": "Breaker the Magical Warrior", "ctype": "Monster", "zone": "hand", "atk": "1600", "def": "1000", "level": "4"}, "target": None},
          {"key": "card|2|Attack|9", "play": "Attack", "card": mon("Sangan", 1000, 600), "target": {"pos": "FD"}},

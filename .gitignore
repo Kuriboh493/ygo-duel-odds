@@ -4,3 +4,4 @@ __pycache__/
 build/
 policy.json
 ygo-training-data*.json
+sim-training.json

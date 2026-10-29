@@ -212,10 +212,12 @@
     return {name: get("name") || null, ctype: get("card_type") || null, zone: c.zone, pos,
             atk: num(el.data("new_atk") ?? get("atk")), def: num(el.data("new_def") ?? get("def")), level: num(get("level"))};
   }
+  // LIGHT or DARK monsters in a graveyard, for Black Luster Soldier and Chaos Sorcerer.
+  const gyAttr = (p, attr) => list(p.grave_arr).filter(el => { const cf = isCard(el) && el.data("cardfront"); return cf && typeof cf.data === "function" && String(cf.data("attribute") || "").toUpperCase() === attr; }).length;
   const turnStats = {};
   function statsFor(side){
     const t = G.turn(), k = side + "|" + t;
-    return turnStats[k] || (turnStats[k] = {plays: 0, summons: 0});
+    return turnStats[k] || (turnStats[k] = {plays: 0, summons: 0, draws: 0, discards: 0, last: null, lastCard: null, history: []});
   }
   function buildRecord(me, side){
     const p1 = G.p1(), p2 = G.p2(), opp = me === p1 ? p2 : p1, oppSide = side === "player1" ? "player2" : "player1";
@@ -224,9 +226,11 @@
     const zone = (cs, z) => cs.filter(c => c.zone === z);
     const st = cs => cs.filter(c => c.zone === "spell/trap" || c.zone === "field");
     const myTurn = tp === me, stats = statsFor(side);
-    const rec = {v: 1, turn: G.turn(), phase: G.phase() || "", myTurn, playsThisTurn: stats.plays, summonsThisTurn: stats.summons, solo: isSolo(),
+    const rec = {v: 2, turn: G.turn(), phase: G.phase() || "", myTurn, playsThisTurn: stats.plays, summonsThisTurn: stats.summons,
+      drawsThisTurn: stats.draws, discardsThisTurn: stats.discards, lastPlay: stats.last, lastCard: stats.lastCard, turnHistory: stats.history.slice(), solo: isSolo(),
       me: {lp: num(me.lifepoints), deck: list(me.main_arr).length, hand: zone(mine, "hand").map(c => cardRec(c, true)),
-           mon: zone(mine, "monster").map(c => cardRec(c, true)), st: st(mine).map(c => cardRec(c, true)), gy: list(me.grave_arr).length, ban: list(me.banished_arr).length},
+           mon: zone(mine, "monster").map(c => cardRec(c, true)), st: st(mine).map(c => cardRec(c, true)), gy: list(me.grave_arr).length,
+           gyLight: gyAttr(me, "LIGHT"), gyDark: gyAttr(me, "DARK"), ban: list(me.banished_arr).length},
       opp: {lp: num(opp.lifepoints), deck: list(opp.main_arr).length, hand: list(opp.hand_arr).length,
             mon: zone(theirs, "monster").map(c => cardRec(c, false)), st: st(theirs).map(c => cardRec(c, false)), gy: list(opp.grave_arr).length, ban: list(opp.banished_arr).length},
       cands: []};
@@ -256,7 +260,16 @@
       else if (typeof turn_player !== "undefined" && turn_player){ me = turn_player; side = me === p1 ? "player1" : "player2"; }
     }
     const play = String(d.play), stats = statsFor(side);
-    const count = () => { stats.plays++; if (play === "Normal Summon" || play === "Set monster") stats.summons++; };
+    // The card's name is only kept for your own cards, which are the only ones you make plays with.
+    const owned = d.id !== undefined && findCard(d.id), lastCard = owned ? front(owned.el).name : null;
+    const count = () => {
+      stats.plays++; if (play === "Normal Summon" || play === "Set monster") stats.summons++;
+      if (play === "Draw card") stats.draws++;
+      if (play === "To GY" && owned && owned.zone === "hand") stats.discards++;
+      const h = `${play}:${lastCard || ""}`;
+      if (!stats.history.includes(h)) stats.history.push(h);
+      stats.last = play; stats.lastCard = lastCard;
+    };
     if (!recording){ count(); return; }
     const rec = buildRecord(me, side), keys = rec.cands.map(c => c.key);
     let key = null;
