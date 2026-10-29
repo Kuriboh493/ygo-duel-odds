@@ -8,12 +8,13 @@
 
   const TAG = "__ygoOdds";
   const post = (kind, data) => window.postMessage({[TAG]:"hook", kind, data}, "*");
-  let sideOverride = "auto", paused = false;
+  let sideOverride = "auto", paused = false, recording = false;
   window.addEventListener("message", ev => {
     const d = ev.data;
     if (ev.source !== window || !d || d[TAG] !== "tracker") return;
     if (d.kind === "side"){ sideOverride = d.data || "auto"; lastSig = ""; }
     if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
+    if (d.kind === "record") recording = !!d.data;
     if (d.kind === "history") post("history", history());
     if (d.kind === "ping") post("pong", true);
     if (d.kind === "exec"){
@@ -136,6 +137,7 @@
     const wrapped = function(data){
       // The board as it was just before this play goes first, so the tracker sees what the play responded to.
       try { if (data && data.play && !paused){ tick(); post("event", summarize(data)); } } catch (e){ post("error", String(e && e.message || e)); }
+      try { if (data && data.play) recordDecision(data); } catch (e){ post("error", "Recording: " + String(e && e.message || e)); }
       return orig.apply(this, arguments);
     };
     wrapped.__ygoOdds = true;
@@ -190,12 +192,85 @@
     const deck = typeof showDeckMenu === "function" && list(p1.main_arr).length ? captureMenu(() => showDeckMenu()) : [];
     const targets = [];
     for (const [p, side] of [[p1, "player1"], [p2, "player2"]]) for (const z of ["m1","m2","m3","m4","m5"]) if (isCard(p[z])) targets.push(Object.assign(describeCard({el: p[z], zone: "monster", side})));
-    return Object.assign(base, {cards, deck, globals: [...GLOBAL_PLAYS], monsters: targets});
+    // The decision record for whichever side's turn it is, for the play model.
+    const tp = typeof turn_player !== "undefined" ? turn_player : null, turnSide = tp === p2 ? "player2" : "player1";
+    return Object.assign(base, {cards, deck, globals: [...GLOBAL_PLAYS], monsters: targets, turnSide, record: buildRecord(tp === p2 ? p2 : p1, turnSide)});
   }
   function findCard(id){
     const p1 = G.p1(), p2 = G.p2();
     return ownCards(p1, "player1").concat(ownCards(p2, "player2")).find(c => String(c.el.data("id")) === String(id)) || null;
   }
+  // ---------- Decision records, for training and running the play model ----------
+  // The situation one side faced, every play it could make, and (when recording) which one it made.
+  // Your own side carries card names and stats. The other side only carries what both players can see.
+  const num = x => { const n = Number(x); return x === null || x === undefined || x === "" || n !== n ? null : n; };
+  function cardRec(c, reveal){
+    const el = c.el, fd = !!el.data("face_down");
+    const pos = c.zone === "monster" ? (fd ? "FD" : el.data("inDEF") ? "DEF" : "ATK") : (fd ? "FD" : null);
+    if (!reveal && (fd || c.zone === "hand")) return {zone: c.zone, pos: "FD"};
+    const cf = el.data("cardfront"), get = k => cf && typeof cf.data === "function" ? cf.data(k) : null;
+    return {name: get("name") || null, ctype: get("card_type") || null, zone: c.zone, pos,
+            atk: num(el.data("new_atk") ?? get("atk")), def: num(el.data("new_def") ?? get("def")), level: num(get("level"))};
+  }
+  const turnStats = {};
+  function statsFor(side){
+    const t = G.turn(), k = side + "|" + t;
+    return turnStats[k] || (turnStats[k] = {plays: 0, summons: 0});
+  }
+  function buildRecord(me, side){
+    const p1 = G.p1(), p2 = G.p2(), opp = me === p1 ? p2 : p1, oppSide = side === "player1" ? "player2" : "player1";
+    const tp = typeof turn_player !== "undefined" ? turn_player : null;
+    const mine = ownCards(me, side), theirs = ownCards(opp, oppSide);
+    const zone = (cs, z) => cs.filter(c => c.zone === z);
+    const st = cs => cs.filter(c => c.zone === "spell/trap" || c.zone === "field");
+    const myTurn = tp === me, stats = statsFor(side);
+    const rec = {v: 1, turn: G.turn(), phase: G.phase() || "", myTurn, playsThisTurn: stats.plays, summonsThisTurn: stats.summons, solo: isSolo(),
+      me: {lp: num(me.lifepoints), deck: list(me.main_arr).length, hand: zone(mine, "hand").map(c => cardRec(c, true)),
+           mon: zone(mine, "monster").map(c => cardRec(c, true)), st: st(mine).map(c => cardRec(c, true)), gy: list(me.grave_arr).length, ban: list(me.banished_arr).length},
+      opp: {lp: num(opp.lifepoints), deck: list(opp.main_arr).length, hand: list(opp.hand_arr).length,
+            mon: zone(theirs, "monster").map(c => cardRec(c, false)), st: st(theirs).map(c => cardRec(c, false)), gy: list(opp.grave_arr).length, ban: list(opp.banished_arr).length},
+      cands: []};
+    const targets = zone(theirs, "monster");
+    for (const c of mine){
+      const info = cardRec(c, true), id = String(c.el.data("id"));
+      for (const o of menuFor(c.el)){
+        if (o === "Attack") for (const t of targets) rec.cands.push({key: `card|${id}|Attack|${t.el.data("id")}`, play: o, card: info, target: cardRec(t, false)});
+        else rec.cands.push({key: `card|${id}|${o}`, play: o, card: info, target: null});
+      }
+    }
+    if (me === p1 && typeof showDeckMenu === "function" && list(p1.main_arr).length)
+      for (const o of captureMenu(() => showDeckMenu())) rec.cands.push({key: `deck|${o}`, play: o, card: {zone: "deck"}, target: null});
+    if (myTurn) for (const g of GLOBAL_PLAYS) rec.cands.push({key: `global|${g}`, play: g, card: null, target: null});
+    return rec;
+  }
+  // Called just before DuelingBook applies each of your plays, so the board is still as you saw it.
+  // Always counts the play for this turn's totals; builds and sends the record only while recording.
+  function recordDecision(d){
+    const sd = sides(), p1 = G.p1(), p2 = G.p2();
+    if (!sd || sd.spectating || !DUEL_LABELS.has(G.label()) || d.username !== sd.mine.username) return;
+    // In Solo you play both sides: the play belongs to whichever side owns the card, or whose turn it is.
+    let me = sd.mine, side = me === p1 ? "player1" : "player2";
+    if (isSolo()){
+      const id = d.attacking_id || d.id, owner = id && findCard(id);
+      if (owner){ side = owner.side; me = side === "player1" ? p1 : p2; }
+      else if (typeof turn_player !== "undefined" && turn_player){ me = turn_player; side = me === p1 ? "player1" : "player2"; }
+    }
+    const play = String(d.play), stats = statsFor(side);
+    const count = () => { stats.plays++; if (play === "Normal Summon" || play === "Set monster") stats.summons++; };
+    if (!recording){ count(); return; }
+    const rec = buildRecord(me, side), keys = rec.cands.map(c => c.key);
+    let key = null;
+    if (play === "Attack") key = `card|${d.attacking_id}|Attack|${d.attacked_id}`;
+    else if (GLOBAL_PLAYS.has(play)) key = `global|${play}`;
+    else if (d.id !== undefined && keys.includes(`card|${d.id}|${play}`)) key = `card|${d.id}|${play}`;
+    else if (keys.includes(`deck|${play}`)) key = `deck|${play}`;
+    const chosen = key === null ? -1 : keys.indexOf(key);
+    count();
+    if (chosen < 0){ post("decisionSkipped", play); return; }
+    rec.chosen = chosen;
+    post("decision", rec);
+  }
+
   function execute(req){
     if (req.type === "moves") return {ok: true, moves: moves()};
     if (!isSolo()) return {ok: false, reason: "Auto-play only runs in DuelingBook's Solo mode."};

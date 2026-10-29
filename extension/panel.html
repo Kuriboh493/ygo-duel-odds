@@ -135,8 +135,21 @@
       <label for="ap-strategy" class="meta">What it should do</label>
       <select id="ap-strategy" style="margin:4px 0 10px"></select>
       <p class="hint" id="ap-strategy-desc" style="margin:-4px 0 10px"></p>
+      <div id="ap-sides-box" hidden><label for="ap-sides" class="meta">Which side it plays</label>
+      <select id="ap-sides" style="margin:4px 0 10px"><option value="player1">Player 1 only</option><option value="both">Both sides (it plays itself)</option></select></div>
       <div class="slider"><label for="ap-delay">Time between plays</label><input type="range" id="ap-delay" min="300" max="3000" step="100" value="900"><output id="ap-delay-out">0.9 s</output></div>
       <div class="row" style="margin-top:12px"><button class="btn primary" id="ap-run">Start</button></div>
+    </section>
+    <section class="panel" aria-labelledby="h-learn">
+      <h2 id="h-learn">Learning</h2>
+      <label class="toggle"><input type="checkbox" id="ml-record"> Record my plays for training</label>
+      <p class="hint" style="margin:-4px 0 10px">While this is on, each play you make in any duel is saved on this computer with the situation you made it in. Only your own cards and what both players can see are saved.</p>
+      <p class="meta" id="ml-count" style="margin:0 0 8px">No plays recorded yet.</p>
+      <div class="row"><button class="btn" id="ml-download">Download training data</button><button class="btn" id="ml-clear">Delete recorded plays</button></div>
+      <h3>Trained model</h3>
+      <p class="meta" id="ml-model" style="margin:0 0 8px">No model loaded.</p>
+      <div class="row"><label class="btn" for="ml-file">Load a trained model</label><input type="file" id="ml-file" accept=".json,application/json" hidden><button class="btn" id="ml-remove" hidden>Remove model</button></div>
+      <p class="hint">Train a model on your computer with <code>python3 tools/train_policy.py</code> and the downloaded file, then load the <code>policy.json</code> it makes. The README explains how.</p>
     </section>
     <section class="panel" aria-labelledby="h-apmoves">
       <h2 id="h-apmoves">Plays available now</h2>
@@ -192,6 +205,7 @@
 <script src="formats.js"></script>
 <script src="learned.js"></script>
 <script src="panel.js"></script>
+<script src="features.js"></script>
 <script src="autoplay.js"></script>
 </body>
 </html>

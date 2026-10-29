@@ -16,7 +16,7 @@
   const PHASE = /^(Enter (BP|M2|EP|DP|SP|M1)|End turn)$/;
   const WINDOW_MS = 30000;
 
-  let settings = {enabled:true, auto:true, strength:0.7, side:"auto"};
+  let settings = {enabled:true, auto:true, strength:0.7, side:"auto", record:false};
   const on = () => settings.enabled !== false;
   let T = null, snap = null, hooked = false, events = 0, timer = 0, sendTimer = 0;
 
@@ -60,13 +60,14 @@
     // Restores the duel after a page reload. A duel already being tracked wins over a stale save.
     if (!on()) T = null;
     else if (r[STORE] && r[STORE].key && (!T || T.key === r[STORE].key)){ T = r[STORE]; T.maxSeen = T.maxSeen || {}; T.soft = T.soft || {}; if (snap) onSnapshot(snap); }
-    toHook("side", settings.side); toHook("pause", !on()); send();
+    toHook("side", settings.side); toHook("pause", !on()); toHook("record", !!settings.record); send();
   }).catch(noteError);
   api.storage.onChanged.addListener((ch, area) => {
     if (area !== "local" || !ch.settings) return;
     const prevSide = settings.side, wasOn = on();
     settings = Object.assign(settings, ch.settings.newValue || {});
     if (settings.side !== prevSide){ toHook("side", settings.side); T = null; }
+    toHook("record", !!settings.record);
     // Turning tracking off forgets the duel. Turning it back on starts over from the board and the duel log.
     if (on() !== wasOn){ T = null; closeWindowsQuiet(); toHook("pause", !on()); if (!on()) api.storage.local.remove(STORE).catch(noteError); }
     send();
@@ -230,6 +231,32 @@
     T.windows = [];
   }
 
+  // ---------- Training data ----------
+  // Recorded decisions are kept in chunks (train-0, train-1, ...) listed in train-index, oldest dropped past the cap.
+  const TRAIN_INDEX = "train-index", TRAIN_CHUNK = 200, TRAIN_MAX = 40000;
+  let trainQueue = Promise.resolve();
+  function saveDecision(rec){
+    if (!rec) return;
+    rec.t = Date.now(); rec.fmt = settings.format || "goat";
+    rec.duel = T ? `${T.key}#${T.game}` : (snap && snap.ok ? `${snap.duelId || ""}|${snap.me}|${snap.opp}` : "unknown");
+    trainQueue = trainQueue.then(async () => {
+      const r = await api.storage.local.get([TRAIN_INDEX]);
+      const idx = r[TRAIN_INDEX] || {chunks: [], count: 0, next: 0, duels: []};
+      let key = idx.chunks[idx.chunks.length - 1], rows = [];
+      if (key){ rows = (await api.storage.local.get([key]))[key] || []; }
+      if (!key || rows.length >= TRAIN_CHUNK){ key = `train-${idx.next++}`; idx.chunks.push(key); rows = []; }
+      rows.push(rec); idx.count++;
+      if (!idx.duels.includes(rec.duel)){ idx.duels.push(rec.duel); if (idx.duels.length > 2000) idx.duels.shift(); }
+      const out = {[key]: rows};
+      while (idx.count > TRAIN_MAX && idx.chunks.length > 1){
+        const old = idx.chunks.shift(), n = ((await api.storage.local.get([old]))[old] || []).length;
+        await api.storage.local.remove(old); idx.count -= n;
+      }
+      out[TRAIN_INDEX] = idx;
+      await api.storage.local.set(out);
+    }).catch(noteError);
+  }
+
   // ---------- View for the panel ----------
   // Cards currently identified: face-up, in the GY, face-up banished, or known in hand or face-down.
   function counts(){
@@ -281,6 +308,8 @@
     if (d.kind === "hooked"){ hooked = true; send(); }
     else if (d.kind === "error") noteError("Page hook: " + d.data);
     else if (d.kind === "history") guard(catchUp)(d.data);
+    else if (d.kind === "decision") saveDecision(d.data);
+    else if (d.kind === "decisionSkipped"){ diag.skipped = (diag.skipped || 0) + 1; }
     else if (d.kind === "execResult"){ const r = d.data || {}, done = pendingExec.get(r.rid); if (done){ pendingExec.delete(r.rid); done(r); } }
     else if (d.kind === "snapshot"){
       diag.snapshots++;

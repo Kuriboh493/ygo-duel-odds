@@ -161,8 +161,9 @@ The **Auto** tab can make plays on DuelingBook for you: draw, summon, set, activ
 
 **It only works in DuelingBook's Solo Mode**, where you play both sides yourself. In any duel against another person, it's locked and refuses every play. Having a program play for you against someone who thinks they're playing you would be unfair to them, and DuelingBook treats outside help as cheating.
 
-It doesn't decide what to play yet. That part is left for later, so for now it comes with two simple settings:
+Under **What it should do** you can choose:
 
+- **Learned model (plays like you)**: makes the plays a model trained on your own recorded duels thinks you'd make. See [Teaching it to play like you](#teaching-it-to-play-like-you).
 - **Nothing (just watch)**: runs but never plays. Use it to check that auto-play can see the duel.
 - **Test: draw, then end the turn**: on player 1's turns it draws a card and ends the turn, to check that plays go through.
 
@@ -174,6 +175,32 @@ To try it:
 4. Or pick a setting under **What it should do**, choose how long to wait between plays, and press **Start**. Press **Stop** at any time.
 
 Everything it does is listed under **What it did**.
+
+### Teaching it to play like you
+
+The learned model copies your decisions. You record your own duels, train a model on your computer, and load it back into the extension. It learns from what you did in each situation, so the more duels you record, the better it gets. It isn't a general Yu-Gi-Oh! AI: it can only make the kinds of plays it has seen you make.
+
+**1. Record your plays.** In the **Auto** tab, under **Learning**, turn on **Record my plays for training**. Then play duels as normal, in any mode. Each play you make is saved on your computer, along with the situation you made it in: your cards, and whatever both players could see of your opponent's. It never saves your opponent's hidden cards. The count under the switch shows how many plays are saved. A few hundred plays is a start, and a few thousand is better.
+
+**2. Download them.** Press **Download training data**. A file called something like `ygo-training-data-2026-10-29.json` downloads.
+
+**3. Train the model.** This needs Python 3, which Macs and most Linux computers already have. On Windows, install it from [python.org](https://www.python.org/downloads/). The trainer isn't in the extension download, so get the full project too: [download it from GitHub](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip) and unzip it. Open a terminal in that `ygo-duel-odds-main` folder and run:
+
+```
+python3 tools/train_policy.py ~/Downloads/ygo-training-data-2026-10-29.json
+```
+
+It takes a few seconds to a few minutes. When it finishes, it tells you how often the model picked the play you actually made, in duels it didn't train on, and how that compares to guessing. It writes a file called `policy.json`.
+
+**4. Load it.** Under **Learning**, press **Load a trained model** and pick `policy.json`. Then choose **Learned model** under **What it should do**, start a Solo Mode duel, and press **Start**.
+
+Some safety rules always apply when it plays:
+
+- It never makes a kind of play it has never seen you make.
+- It makes each card's play at most once per turn, so each monster attacks at most once.
+- Once it ends its turn, it waits for the next one, and it ends the turn after 40 plays.
+
+Under **Which side it plays**, choose whether it plays only player 1, or both sides against itself.
 
 ## Something not working?
 
@@ -230,6 +257,8 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
 | `tools/train_decks.py` | Learns the deck archetypes in `extension/learned.js`. |
 | `tools/make_icons.py` | Draws the toolbar icons. |
 | `tools/build_safari.sh` | Builds the Safari app with Xcode. The GitHub workflows run it on a macOS runner. |
+| `tools/train_policy.py` | Trains the auto-play model from recorded decisions. |
+| `tools/test_features.py` | Checks that the Python and JavaScript copies of the model's features match. |
 
 ### How the extension works
 
@@ -244,6 +273,16 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
 - **Auto-play** has two halves:
   - `page-hook.js` is the executor. It lists the plays on offer by running the client's own menu builders (`cardMenuE`, `showDeckMenu`) with `showMenu` briefly swapped for a recorder, so nothing appears on screen. It makes a play the way a click does, through `cardMenuClicked`. Attacks on a monster go through `Send` with the chosen target, and phase plays use `Send` directly.
   - The executor refuses anything when `solo` isn't true, anything that isn't on that card's menu right now, and anything less than 300 ms after its last play.
+  - When recording is on, `page-hook.js` builds a decision record just before the client applies each of your plays. The record holds:
+    - your cards with names and stats
+    - the opponent's public cards, plus counts of their hidden ones
+    - the turn, phase, and how many plays and summons you've made this turn
+    - every candidate play, with a key
+    - which candidate you chose
+
+    `tracker.js` stores the records in chunks, capped at 40,000.
+  - `features.js` turns a record into features for each candidate: the play type crossed with the phase, zone, card name, hand size, board counts and life points, plus battle outcome for attacks. `tools/train_policy.py` has a line-for-line Python copy, and `tools/test_features.py` checks the two agree using macOS's JavaScript engine. Records keep the raw situation rather than features, so the features can change without re-recording. Bump `FEATURES_VERSION` in both when they do.
+  - `train_policy.py` fits a linear softmax ranker over each decision's candidates with AdaGrad and L2, holding out 20% of duels. It reports top-1 and top-3 accuracy against random and most-common-play baselines, then refits on everything and exports the weights. No packages are needed.
   - `autoplay.js` runs the loop in the panel. A strategy is an entry in `STRATEGIES` with a `decide(state)` function that returns an action or `null`. The comment at the top of the file lists what `state` holds and what an action looks like.
 - **`report.html`** gathers diagnostics from the panel and the DuelingBook tab, and opens a prefilled GitHub issue.
 

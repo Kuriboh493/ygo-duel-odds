@@ -2,3 +2,5 @@ tools/.cache/
 cardinfo.json
 __pycache__/
 build/
+policy.json
+ygo-training-data*.json
