@@ -281,6 +281,7 @@
     if (d.kind === "hooked"){ hooked = true; send(); }
     else if (d.kind === "error") noteError("Page hook: " + d.data);
     else if (d.kind === "history") guard(catchUp)(d.data);
+    else if (d.kind === "execResult"){ const r = d.data || {}, done = pendingExec.get(r.rid); if (done){ pendingExec.delete(r.rid); done(r); } }
     else if (d.kind === "snapshot"){
       diag.snapshots++;
       if (d.data && d.data.error) noteError("Board read failed: " + d.data.error);
@@ -294,10 +295,19 @@
     }
   });
   const guarded = {onSnapshot: guard(onSnapshot), onEvent: guard(onEvent)};
+  const pendingExec = new Map(); let execSeq = 0;
   api.runtime.onMessage.addListener((msg, sender, reply) => {
     if (!msg || !msg.type) return;
     if (msg.type === "getView"){ reply(view()); return; }
     if (msg.type === "diag"){ reply(diagnostics()); return; }
+    // Auto-play: pass the request to the page hook and answer when it does (or after 3 seconds).
+    if (msg.type === "exec"){
+      const rid = ++execSeq;
+      const timer = setTimeout(() => { if (pendingExec.delete(rid)) reply({ok:false, reason:"The DuelingBook page didn't answer. Reload it."}); }, 3000);
+      pendingExec.set(rid, r => { clearTimeout(timer); reply(r); });
+      toHook("exec", {rid, req: msg.req});
+      return true;
+    }
     if (!T || !snap || !snap.ok){ reply({ok:false}); return; }
     if (msg.type === "evidence"){
       // ev: {kind:"tag", tag, s} or {kind:"card", name, s}; scope: "hand", "backrow" or one card id.

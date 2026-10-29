@@ -16,6 +16,11 @@
     if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
     if (d.kind === "history") post("history", history());
     if (d.kind === "ping") post("pong", true);
+    if (d.kind === "exec"){
+      let res;
+      try { res = execute(d.data && d.data.req || {}); } catch (e){ res = {ok:false, reason:String(e && e.message || e)}; }
+      post("execResult", Object.assign({rid: d.data && d.data.rid}, res));
+    }
     if (d.kind === "resend"){ lastSig = ""; if (window.duelResponse && window.duelResponse.__ygoOdds) post("hooked", true); }
   });
 
@@ -138,4 +143,92 @@
     post("hooked", true);
   }
   wrap(); setInterval(wrap, 1000);
+
+  // ---------- Auto-play executor ----------
+  // Lists and performs plays through the client's own menu code, exactly as hovering and clicking would.
+  // Locked to DuelingBook's Solo mode, where you control both sides, so it never plays against another person.
+  const isSolo = () => typeof solo !== "undefined" && solo === true;
+  const GLOBAL_PLAYS = new Set(["Enter DP","Enter SP","Enter M1","Enter BP","Enter M2","Enter EP","End turn"]);
+  const MIN_GAP_MS = 300;
+  const SKIP_ITEMS = new Set(["This is backwards","This looks right"]);
+  let lastExec = 0;
+
+  // Runs a menu builder with showMenu swapped for a recorder, so the menu's items come back instead of appearing.
+  function captureMenu(build){
+    if (typeof showMenu !== "function") return [];
+    const real = window.showMenu; let items = null;
+    window.showMenu = (card, list) => { items = list; };
+    try { build(); } catch (e){} finally { window.showMenu = real; }
+    return (items || []).map(i => i && (i.data || i.label)).filter(x => x && !SKIP_ITEMS.has(x));
+  }
+  function menuFor(el){
+    const content = el.find && el.find(".content:first")[0];
+    if (!content || typeof cardMenuE !== "function") return [];
+    return captureMenu(() => cardMenuE.call(content));
+  }
+  function ownCards(p, side){
+    const out = [], add = (el, zone) => { if (isCard(el)) out.push({el, zone, side}); };
+    list(p.hand_arr).forEach(el => add(el, "hand"));
+    for (const z of ["m1","m2","m3","m4","m5"]) add(p[z], "monster");
+    for (const z of ["s1","s2","s3","s4","s5","pendulumLeft","pendulumRight"]) add(p[z], "spell/trap");
+    add(p.fieldSpell, "field");
+    list(p.grave_arr).forEach(el => add(el, "graveyard"));
+    list(p.banished_arr).forEach(el => add(el, "banished"));
+    return out;
+  }
+  function describeCard(c){
+    const f = front(c.el);
+    return {id: String(c.el.data("id")), name: f.name, ctype: f.ctype, zone: c.zone, side: c.side, faceDown: !!c.el.data("face_down"),
+            position: c.zone === "monster" ? (c.el.data("inDEF") ? "DEF" : "ATK") : null};
+  }
+  function moves(){
+    const p1 = G.p1(), p2 = G.p2();
+    const base = {solo: isSolo(), label: G.label(), turn: G.turn(), turnPlayer: G.turnPlayer(), phase: G.phase(), me: p1 && p1.username, other: p2 && p2.username};
+    if (!base.solo || !p1 || !p2) return Object.assign(base, {cards: [], deck: [], globals: []});
+    // In Solo you control both sides, so both are listed.
+    const cards = ownCards(p1, "player1").concat(ownCards(p2, "player2")).map(c => Object.assign(describeCard(c), {options: menuFor(c.el)}));
+    const deck = typeof showDeckMenu === "function" && list(p1.main_arr).length ? captureMenu(() => showDeckMenu()) : [];
+    const targets = [];
+    for (const [p, side] of [[p1, "player1"], [p2, "player2"]]) for (const z of ["m1","m2","m3","m4","m5"]) if (isCard(p[z])) targets.push(Object.assign(describeCard({el: p[z], zone: "monster", side})));
+    return Object.assign(base, {cards, deck, globals: [...GLOBAL_PLAYS], monsters: targets});
+  }
+  function findCard(id){
+    const p1 = G.p1(), p2 = G.p2();
+    return ownCards(p1, "player1").concat(ownCards(p2, "player2")).find(c => String(c.el.data("id")) === String(id)) || null;
+  }
+  function execute(req){
+    if (req.type === "moves") return {ok: true, moves: moves()};
+    if (!isSolo()) return {ok: false, reason: "Auto-play only runs in DuelingBook's Solo mode."};
+    if (Date.now() - lastExec < MIN_GAP_MS) return {ok: false, reason: "Too soon after the last play."};
+    if (typeof Send !== "function" || typeof cardMenuClicked !== "function") return {ok: false, reason: "DuelingBook's play functions weren't found."};
+    const p1 = G.p1();
+    if (req.type === "global"){
+      if (!GLOBAL_PLAYS.has(req.play)) return {ok: false, reason: `"${req.play}" isn't a phase or turn play.`};
+      lastExec = Date.now(); Send({action: "Duel", play: req.play});
+      return {ok: true};
+    }
+    if (req.type === "deck"){
+      const opts = captureMenu(() => showDeckMenu());
+      if (!opts.includes(req.play)) return {ok: false, reason: `"${req.play}" isn't on the deck's menu right now.`};
+      lastExec = Date.now(); cardMenuClicked(list(p1.main_arr)[0], req.play);
+      return {ok: true};
+    }
+    if (req.type === "card"){
+      const c = findCard(req.card);
+      if (!c) return {ok: false, reason: "That card isn't in a hand, on the field, in a graveyard or banished."};
+      const opts = menuFor(c.el);
+      if (!opts.includes(req.play)) return {ok: false, reason: `"${req.play}" isn't on that card's menu right now.`, options: opts};
+      lastExec = Date.now();
+      if (req.play === "Attack"){
+        // The click version asks you to pick a target with the mouse; send the chosen one directly instead.
+        const t = req.target && findCard(req.target);
+        if (!t || t.zone !== "monster" || t.side === c.side) return {ok: false, reason: "Attack needs one of the other side's monsters as its target."};
+        Send({action: "Duel", play: "Attack", attacking_card: c.el.data("id"), attacked_card: t.el.data("id")});
+        return {ok: true};
+      }
+      cardMenuClicked(c.el, req.play);
+      return {ok: true};
+    }
+    return {ok: false, reason: "Unknown request."};
+  }
 })();

@@ -15,6 +15,7 @@ It only uses what both players can see on screen. It never peeks at your opponen
 - [Install it (about 5 minutes)](#install-it-about-5-minutes)
 - [Use it](#use-it)
 - [Turning it on partway through a duel](#turning-it-on-partway-through-a-duel)
+- [Auto-play (Solo Mode)](#auto-play-solo-mode)
 - [Something not working?](#something-not-working)
 - [What it can and can't see](#what-it-can-and-cant-see)
 - [For developers](#for-developers)
@@ -107,6 +108,7 @@ You can switch it on whenever you like, including in the middle of a duel. See [
   - **Their next draw** lists the cards they're most likely to draw next.
 - **Their deck**: the deck they're most likely playing, the cards it usually runs, and a place to paste their decklist if you have it.
 - **Log**: everything the extension has noticed, in order, newest first. The number on the tab counts new entries.
+- **Auto**: [auto-play](#auto-play-solo-mode), which can make plays for you in Solo Mode.
 - **Settings**: the "no response" options, tracking options, and **Report a problem**.
 
 ### Reading the numbers
@@ -150,6 +152,28 @@ There are two things it can't recover from before you switched it on:
 - **Earlier face-down cards.** It doesn't know whether a card in their hand was once set face-down.
 
 A note at the top of the Odds tab tells you when this happens.
+
+## Auto-play (Solo Mode)
+
+The **Auto** tab can make plays on DuelingBook for you: draw, summon, set, activate, attack, change phases and end the turn. It makes them through DuelingBook's own menus, exactly as if you'd clicked them.
+
+![The Auto tab in a Solo Mode duel](docs/panel-autoplay.png)
+
+**It only works in DuelingBook's Solo Mode**, where you play both sides yourself. In any duel against another person, it's locked and refuses every play. Having a program play for you against someone who thinks they're playing you would be unfair to them, and DuelingBook treats outside help as cheating.
+
+It doesn't decide what to play yet. That part is left for later, so for now it comes with two simple settings:
+
+- **Nothing (just watch)**: runs but never plays. Use it to check that auto-play can see the duel.
+- **Test: draw, then end the turn**: on player 1's turns it draws a card and ends the turn, to check that plays go through.
+
+To try it:
+
+1. On DuelingBook, start a **Solo Mode** duel.
+2. Open the **Auto** tab. The box at the top should say **Ready: Solo Mode duel**.
+3. Under **Plays available now**, click any play. Auto-play makes it on DuelingBook, so you can see it working.
+4. Or pick a setting under **What it should do**, choose how long to wait between plays, and press **Start**. Press **Stop** at any time.
+
+Everything it does is listed under **What it did**.
 
 ## Something not working?
 
@@ -217,6 +241,10 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
   - With no decklist, the opponent's deck is a mixture of archetypes from `learned.js` and decks from your past duels. Each archetype gives every card a distribution over 0–3 copies.
   - Each card shown reweights the archetypes and updates copy counts through a binomial model of how much of the deck has been seen.
   - Each of 15,000 simulated deals samples a whole deck, conditioned on the deck size DuelingBook shows. It then deals the hidden cards with importance weights from the face-down and hand evidence.
+- **Auto-play** has two halves:
+  - `page-hook.js` is the executor. It lists the plays on offer by running the client's own menu builders (`cardMenuE`, `showDeckMenu`) with `showMenu` briefly swapped for a recorder, so nothing appears on screen. It makes a play the way a click does, through `cardMenuClicked`. Attacks on a monster go through `Send` with the chosen target, and phase plays use `Send` directly.
+  - The executor refuses anything when `solo` isn't true, anything that isn't on that card's menu right now, and anything less than 300 ms after its last play.
+  - `autoplay.js` runs the loop in the panel. A strategy is an entry in `STRATEGIES` with a `decide(state)` function that returns an action or `null`. The comment at the top of the file lists what `state` holds and what an action looks like.
 - **`report.html`** gathers diagnostics from the panel and the DuelingBook tab, and opens a prefilled GitHub issue.
 
 If DuelingBook changes its client, the panel says duel events aren't coming through. Board reading may keep working in that case.

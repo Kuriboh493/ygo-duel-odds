@@ -26,8 +26,9 @@
   <div class="status" id="status"></div>
   <nav class="tabs" role="tablist" aria-label="Sections">
     <button role="tab" id="tab-odds" data-tab="odds" aria-controls="pane-odds">Odds</button>
-    <button role="tab" id="tab-deck" data-tab="deck" aria-controls="pane-deck">Their deck</button>
+    <button role="tab" id="tab-deck" data-tab="deck" aria-controls="pane-deck">Deck</button>
     <button role="tab" id="tab-log" data-tab="log" aria-controls="pane-log">Log<span class="badge" id="logbadge" hidden></span></button>
+    <button role="tab" id="tab-auto" data-tab="auto" aria-controls="pane-auto">Auto</button>
     <button role="tab" id="tab-settings" data-tab="settings" aria-controls="pane-settings">Settings</button>
   </nav>
 </header>
@@ -122,6 +123,32 @@
     </section>
   </section>
 
+  <!-- Auto-play: performs plays on DuelingBook through its own menus. Solo mode only. -->
+  <section class="pane" id="pane-auto" role="tabpanel" aria-labelledby="tab-auto" hidden>
+    <section class="panel" aria-labelledby="h-ap">
+      <h2 id="h-ap">Auto-play</h2>
+      <div class="ap-lock" id="ap-lock"><span class="dot" id="ap-dot"></span><span id="ap-status">Checking…</span></div>
+      <p class="hint" style="margin:8px 0 0">Auto-play can make any play you could click on DuelingBook: summon, set, activate, attack, change phases and end the turn. It only works in DuelingBook's <b>Solo</b> mode, where you play both sides. It never plays against another person.</p>
+    </section>
+    <section class="panel" aria-labelledby="h-aprun">
+      <h2 id="h-aprun">Run it</h2>
+      <label for="ap-strategy" class="meta">What it should do</label>
+      <select id="ap-strategy" style="margin:4px 0 10px"></select>
+      <p class="hint" id="ap-strategy-desc" style="margin:-4px 0 10px"></p>
+      <div class="slider"><label for="ap-delay">Time between plays</label><input type="range" id="ap-delay" min="300" max="3000" step="100" value="900"><output id="ap-delay-out">0.9 s</output></div>
+      <div class="row" style="margin-top:12px"><button class="btn primary" id="ap-run">Start</button></div>
+    </section>
+    <section class="panel" aria-labelledby="h-apmoves">
+      <h2 id="h-apmoves">Plays available now</h2>
+      <p class="hint" style="margin:0 0 8px">Every play DuelingBook's menus offer right now. Click one to have auto-play make it, to check it works.</p>
+      <div id="ap-moves"><p class="empty">Open a Solo duel to see plays here.</p></div>
+    </section>
+    <section class="panel" aria-labelledby="h-aplog">
+      <h2 id="h-aplog">What it did</h2>
+      <ul class="log" id="ap-log"><li><span></span><div class="dim">Nothing yet.</div></li></ul>
+    </section>
+  </section>
+
   <section class="pane" id="pane-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
     <section class="panel" aria-labelledby="h-auto">
       <h2 id="h-auto">"No response" evidence</h2>
@@ -165,5 +192,6 @@
 <script src="formats.js"></script>
 <script src="learned.js"></script>
 <script src="panel.js"></script>
+<script src="autoplay.js"></script>
 </body>
 </html>

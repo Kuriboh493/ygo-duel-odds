@@ -181,3 +181,14 @@ body:not(.off) .off-only{display:none}
 .dot.off{background:var(--muted);opacity:.5}
 body.off .on-only{display:none}
 body.off .topbar .status{display:none}
+
+/* Auto-play tab */
+.ap-lock{display:flex;align-items:center;gap:8px;font-size:13px;padding:8px 10px;border-radius:8px;background:var(--sunk);border:1px solid var(--line)}
+.apcard{border-top:1px solid var(--line);padding:8px 0}
+.apcard:first-child{border-top:0;padding-top:0}
+.apcard-head{display:flex;justify-content:space-between;gap:8px;font-size:13px;margin-bottom:5px}
+.apcard-head b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apcard-head span{font-size:11px;color:var(--muted);white-space:nowrap}
+.apgroup{font:600 11px/1.2 var(--f-body);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:12px 0 6px}
+.apgroup:first-child{margin-top:0}
+.btn.running{background:var(--bad);border-color:var(--bad);color:#fff}

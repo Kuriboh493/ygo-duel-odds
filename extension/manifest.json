@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YGO Duel Odds",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Live odds for your opponent's face-down cards, hand, next draw and deck on DuelingBook, updated as the duel happens.",
   "icons": {
     "16": "icons/icon-16.png",
