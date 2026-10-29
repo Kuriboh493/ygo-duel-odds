@@ -15,6 +15,7 @@
     if (d.kind === "side"){ sideOverride = d.data || "auto"; lastSig = ""; }
     if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
     if (d.kind === "record") recording = !!d.data;
+    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.keepHosting = !!(d.data && d.data.keepHosting); }
     if (d.kind === "history") post("history", history());
     if (d.kind === "ping") post("pong", true);
     if (d.kind === "exec"){
@@ -150,6 +151,93 @@
   // Lists and performs plays through the client's own menu code, exactly as hovering and clicking would.
   // Locked to DuelingBook's Solo mode, where you control both sides, so it never plays against another person.
   const isSolo = () => typeof solo !== "undefined" && solo === true;
+
+  // ---------- Bot account mode: duels against people who chose to play the bot ----------
+  // Plays against a person are only allowed when all of these hold: bot account mode is on, the account's
+  // name says it's a bot, the duel is unrated, the opponent joined a duel the bot hosted under the label below,
+  // and the bot has told them in the duel chat that it's a program. It only ever plays its own cards, on its own turn.
+  const BOT_NOTE = "\u{1F916} BOT: you'll be playing YGO Duel Odds, a computer program. Unrated.";
+  const BOT_HELLO = "Hi! I'm a bot: a computer program trained to play this format, run by its owner to test it. Good luck, have fun!";
+  const bot = {on: false, keepHosting: false, hosted: false, consented: new Set(), announced: new Set(), lastLabel: "", acts: {}};
+  const isBotAccount = () => /bot/i.test(G.me() || "");
+  const duelKey = () => { const sd = sides(); return `${G.duelId()}|${sd ? sd.opp.username : ""}|${typeof games !== "undefined" ? games : ""}`; };
+  function botLock(){
+    const sd = sides();
+    if (!bot.on) return "Bot account mode is off.";
+    if (!isBotAccount()) return "The logged-in account's name has to say it's a bot (contain \"bot\").";
+    if (!sd || sd.spectating) return "Not in a duel.";
+    if (typeof rated === "undefined" || rated !== false) return "Bot account mode only plays unrated duels.";
+    if (!bot.consented.has(sd.opp.username)) return "This opponent didn't join the bot's labeled duel, so it won't play them.";
+    if (!bot.announced.has(duelKey())) return "Waiting to tell the opponent in chat that they're playing a bot.";
+    return null;
+  }
+  // Why plays aren't allowed right now, or null when they are.
+  function playLock(){
+    if (isSolo()) return null;
+    const why = botLock();
+    return why === "Bot account mode is off." ? "Auto-play only runs in DuelingBook's Solo mode, or in bot account mode." : why;
+  }
+  const botMine = () => { const sd = sides(); return sd ? sd.mine : null; };
+  const myTurnNow = () => typeof turn_player !== "undefined" && turn_player === botMine();
+  const once = (key, fn) => { if (bot.acts[key]) return; bot.acts[key] = true; try { fn(); } catch (e){ post("error", "Bot: " + (e && e.message || e)); } };
+  function duelChat(message){ if (typeof Send === "function") Send({action: "Duel", play: "Duel message", message, html: 0}); }
+  // Hosts an unrated duel under the bot label, through the client's own Host form.
+  function botHost(fmt){
+    if (!bot.on || !isBotAccount()) return {ok: false, reason: "Turn on bot account mode, logged in as an account whose name says it's a bot."};
+    if (G.label() !== "duel_room") return {ok: false, reason: "Open DuelingBook's Duel Room first."};
+    if (typeof hostDuel !== "function" || typeof $ !== "function") return {ok: false, reason: "DuelingBook's Host form wasn't found."};
+    const format = fmt === "edison" ? "eu" : "gu";
+    $("#host .format_cb").val(format); $("#host .type_cb").val("m");
+    $("#host .duel_note_txt").val(BOT_NOTE); $("#host .duel_password_txt").val("");
+    bot.hosted = true;
+    hostDuel();
+    return {ok: true};
+  }
+  // Answers the parts of a duel around the plays: accepting a joiner, rock-paper-scissors, going first, the
+  // announcement, and side decking (it keeps its deck as it is). Each happens once, a moment after it's asked for.
+  function botTick(){
+    if (!bot.on || !isBotAccount()) return;
+    const label = G.label(), me = G.me();
+    if (label !== bot.lastLabel){ bot.lastLabel = label; bot.acts = {}; bot.enteredAt = Date.now(); }
+    const waited = Date.now() - (bot.enteredAt || 0) > 1500;
+    if (!waited) return;
+    const sd = sides(), consented = sd && bot.consented.has(sd.opp.username);
+    // A tie resets the pick, so it picks again whenever the client is waiting for one.
+    if (label === "rps_start" && consented && typeof pickedRPS !== "undefined" && !pickedRPS && typeof chooseRPS === "function" && Date.now() - (bot.lastRps || 0) > 3000){
+      bot.lastRps = Date.now(); bot.dueled = true;
+      try { const pick = [rock1, paper1, scissors1][Math.floor(Math.random() * 3)]; chooseRPS.call(pick[0]); } catch (e){ post("error", "Bot: " + (e && e.message || e)); }
+    }
+    if ((label === "tp_start" || label === "tp_start2") && consented && typeof rpsWinner !== "undefined" && rpsWinner === me && typeof pickFirst === "function")
+      once("first", () => pickFirst.call(first.find(".content")[0]));
+    if (/^duel_start/.test(label) && consented && !bot.announced.has(duelKey()))
+      once("hello", () => { duelChat(BOT_HELLO); bot.announced.add(duelKey()); });
+    if (label === "siding" && consented && typeof doneSiding === "function") once("side", () => doneSiding());
+    // Hosts again only after a duel was actually played, never because hosting was cancelled.
+    if (label === "duel_room" && bot.keepHosting && bot.dueled && !(typeof hosting !== "undefined" && hosting))
+      once("rehost", () => { bot.dueled = false; botHost(bot.format); });
+  }
+  setInterval(() => { try { botTick(); } catch (e){} }, 1000);
+  // Someone asked to join a duel: accept them only into the bot's own labeled duel.
+  function wrapJoin(){
+    if (typeof window.joinDuelResponse !== "function" || window.joinDuelResponse.__ygoOdds) return;
+    const orig = window.joinDuelResponse;
+    const wrapped = function(data){
+      const r = orig.apply(this, arguments);
+      try {
+        const who = data && data.username;
+        if (bot.on && isBotAccount() && bot.hosted && who && who !== G.me()) setTimeout(() => {
+          if (!(typeof hosting !== "undefined" && hosting)) return;
+          const cell = $("#joinlist .cell2").filter(function(){ return $(this).data("username") === who; }).first();
+          bot.consented.add(who);
+          if (cell.length && typeof acceptUser === "function"){ $("#joinlist .cell2").removeClass("selected"); cell.addClass("selected"); acceptUser(); }
+          else Send({action: "Accept user", username: who});
+        }, 2000);
+      } catch (e){ post("error", "Bot: " + (e && e.message || e)); }
+      return r;
+    };
+    wrapped.__ygoOdds = true; window.joinDuelResponse = wrapped;
+  }
+  wrapJoin(); setInterval(wrapJoin, 1000);
   const GLOBAL_PLAYS = new Set(["Enter DP","Enter SP","Enter M1","Enter BP","Enter M2","Enter EP","End turn"]);
   const MIN_GAP_MS = 300;
   const SKIP_ITEMS = new Set(["This is backwards","This looks right"]);
@@ -185,16 +273,21 @@
   }
   function moves(){
     const p1 = G.p1(), p2 = G.p2();
-    const base = {solo: isSolo(), label: G.label(), turn: G.turn(), turnPlayer: G.turnPlayer(), phase: G.phase(), me: p1 && p1.username, other: p2 && p2.username};
-    if (!base.solo || !p1 || !p2) return Object.assign(base, {cards: [], deck: [], globals: []});
-    // In Solo you control both sides, so both are listed.
-    const cards = ownCards(p1, "player1").concat(ownCards(p2, "player2")).map(c => Object.assign(describeCard(c), {options: menuFor(c.el)}));
+    const lock = playLock(), solo_ = isSolo();
+    const base = {solo: solo_, allowed: !lock, lock, mode: solo_ ? "solo" : "bot", isBotAccount: isBotAccount(), botOn: bot.on, label: G.label(),
+                  turn: G.turn(), turnPlayer: G.turnPlayer(), phase: G.phase(), me: p1 && p1.username, other: p2 && p2.username};
+    if (lock || !p1 || !p2) return Object.assign(base, {cards: [], deck: [], globals: []});
+    // In Solo you control both sides, so both are listed. Against a person, only the bot's own side.
+    const mine = botMine(), mySide = mine === p2 ? "player2" : "player1";
+    const sides_ = solo_ ? [[p1, "player1"], [p2, "player2"]] : [[mine, mySide]];
+    const cards = sides_.flatMap(([p, side]) => ownCards(p, side)).map(c => Object.assign(describeCard(c), {options: menuFor(c.el)}));
     const deck = typeof showDeckMenu === "function" && list(p1.main_arr).length ? captureMenu(() => showDeckMenu()) : [];
     const targets = [];
     for (const [p, side] of [[p1, "player1"], [p2, "player2"]]) for (const z of ["m1","m2","m3","m4","m5"]) if (isCard(p[z])) targets.push(Object.assign(describeCard({el: p[z], zone: "monster", side})));
     // The decision record for whichever side's turn it is, for the play model.
     const tp = typeof turn_player !== "undefined" ? turn_player : null, turnSide = tp === p2 ? "player2" : "player1";
-    return Object.assign(base, {cards, deck, globals: [...GLOBAL_PLAYS], monsters: targets, turnSide, record: buildRecord(tp === p2 ? p2 : p1, turnSide)});
+    if (!solo_ && tp !== mine) return Object.assign(base, {cards, deck, globals: [], monsters: targets, turnSide, myTurn: false, record: null});
+    return Object.assign(base, {cards, deck, globals: [...GLOBAL_PLAYS], monsters: targets, turnSide, myTurn: true, record: buildRecord(tp === p2 ? p2 : p1, turnSide)});
   }
   function findCard(id){
     const p1 = G.p1(), p2 = G.p2();
@@ -286,7 +379,10 @@
 
   function execute(req){
     if (req.type === "moves") return {ok: true, moves: moves()};
-    if (!isSolo()) return {ok: false, reason: "Auto-play only runs in DuelingBook's Solo mode."};
+    if (req.type === "botHost"){ bot.format = req.format; return botHost(req.format); }
+    const lock = playLock();
+    if (lock) return {ok: false, reason: lock};
+    if (!isSolo() && !myTurnNow()) return {ok: false, reason: "It isn't the bot's turn."};
     if (Date.now() - lastExec < MIN_GAP_MS) return {ok: false, reason: "Too soon after the last play."};
     if (typeof Send !== "function" || typeof cardMenuClicked !== "function") return {ok: false, reason: "DuelingBook's play functions weren't found."};
     const p1 = G.p1();
@@ -304,6 +400,7 @@
     if (req.type === "card"){
       const c = findCard(req.card);
       if (!c) return {ok: false, reason: "That card isn't in a hand, on the field, in a graveyard or banished."};
+      if (!isSolo() && c.el.data("owner") !== botMine() && !ownCards(botMine(), "").some(x => x.el === c.el)) return {ok: false, reason: "The bot only plays its own cards."};
       const opts = menuFor(c.el);
       if (!opts.includes(req.play)) return {ok: false, reason: `"${req.play}" isn't on that card's menu right now.`, options: opts};
       lastExec = Date.now();

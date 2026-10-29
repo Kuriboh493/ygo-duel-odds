@@ -16,6 +16,7 @@ It only uses what both players can see on screen. It never peeks at your opponen
 - [Use it](#use-it)
 - [Turning it on partway through a duel](#turning-it-on-partway-through-a-duel)
 - [Auto-play (Solo Mode)](#auto-play-solo-mode)
+- [Bot account: playing people who choose to play a bot](#bot-account-playing-people-who-choose-to-play-a-bot)
 - [Something not working?](#something-not-working)
 - [What it can and can't see](#what-it-can-and-cant-see)
 - [For developers](#for-developers)
@@ -224,6 +225,31 @@ Some safety rules always apply when it plays:
 
 Under **Which side it plays**, choose whether it plays only player 1, or both sides against itself.
 
+## Bot account: playing people who choose to play a bot
+
+Auto-play can also duel real people, but only people who know they're playing a program. It runs on a separate DuelingBook account set up as a bot:
+
+- **It's labeled.** The account's name must contain "bot", and its profile should say it's a bot and who runs it.
+- **Opponents opt in.** It hosts its own unrated duels titled "🤖 BOT: you'll be playing YGO Duel Odds, a computer program. Unrated." It only plays people who join one of those duels.
+- **It tells them in chat.** Before its first play of each game, it posts: "Hi! I'm a bot: a computer program trained to play this format, run by its owner to test it."
+- **It never plays rated duels**, and never joins the matchmaking pools.
+- **It only plays its own cards, on its own turn.**
+
+If any of these isn't true, it refuses to make a play. For example, if you accept a pool duel or a challenge on the bot account yourself, it stays locked, because that opponent never saw its label.
+
+Bots aren't covered by DuelingBook's rules either way, so ask DuelingBook's staff before running one. It's their site, and an account they don't approve of can be banned.
+
+To run it:
+
+1. Make a DuelingBook account for the bot, with "bot" in its name and a profile that says it's a bot run by you.
+2. Ask DuelingBook's staff if it's OK.
+3. Log in as the bot in DuelingBook. Open the **Duel Room** and pick the bot's deck there.
+4. In the panel, open the **Auto** tab and go to **Bot account**. Tick the three confirmations, then turn on **Bot account mode**. Tick **Host again after each duel** if you want it to keep going.
+5. Press **Host a bot duel**. It hosts an unrated Goat match (or Edison, if Edison is picked at the top).
+6. Under **Run it**, choose **Learned model**, and press **Start**.
+
+From there it handles each duel itself: it accepts the first person who joins, plays rock-paper-scissors, goes first when it wins, posts its announcement, plays its turns with the model, and keeps its deck as it is between games. Keep the panel open while it runs. Everything it does is listed under **What it did**.
+
 ## Something not working?
 
 | What you see | What to do |
@@ -297,7 +323,13 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
   - Each of 15,000 simulated deals samples a whole deck, conditioned on the deck size DuelingBook shows. It then deals the hidden cards with importance weights from the face-down and hand evidence.
 - **Auto-play** has two halves:
   - `page-hook.js` is the executor. It lists the plays on offer by running the client's own menu builders (`cardMenuE`, `showDeckMenu`) with `showMenu` briefly swapped for a recorder, so nothing appears on screen. It makes a play the way a click does, through `cardMenuClicked`. Attacks on a monster go through `Send` with the chosen target, and phase plays use `Send` directly.
-  - The executor refuses anything when `solo` isn't true, anything that isn't on that card's menu right now, and anything less than 300 ms after its last play.
+  - The executor refuses anything that isn't on that card's menu right now, and anything less than 300 ms after its last play. Outside Solo Mode, it refuses everything unless bot account mode's conditions all hold:
+    - The account's name contains "bot".
+    - The duel is unrated (`rated === false`).
+    - The opponent joined a duel the bot hosted under its label. `joinDuelResponse` is wrapped to accept joiners and record them.
+    - The bot's announcement has been sent for this game.
+
+    In bot duels it only plays its own cards on its own turn. The hook also answers rock-paper-scissors, picks first and confirms side decking, all through the client's own `chooseRPS`, `pickFirst`, `doneSiding` and `hostDuel`.
   - When recording is on, `page-hook.js` builds a decision record just before the client applies each of your plays. The record holds:
     - your cards with names and stats
     - the opponent's public cards, plus counts of their hidden ones

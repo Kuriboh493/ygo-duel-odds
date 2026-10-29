@@ -54,7 +54,8 @@ const STRATEGIES = {
     desc: "Makes the play a model trained on your recorded duels thinks you'd make. Load a trained model first.",
     decide({moves: m, memory}){
       if (!mlModel || !m.record || !m.record.cands.length) return null;
-      if (apSettings.sides === "player1" && m.turnSide !== "player1") return null;
+      if (m.mode === "bot" && !m.myTurn) return null;
+      if (m.mode !== "bot" && apSettings.sides === "player1" && m.turnSide !== "player1") return null;
       const turnKey = m.turnSide + "|" + m.turn;
       if (memory.turnKey !== turnKey){ memory.turnKey = turnKey; memory.used = {}; memory.count = 0; memory.ended = false; }
       // Once it has ended the turn, it waits for the next one.
@@ -116,7 +117,9 @@ async function apTick(){
   apBusy = true;
   try {
     const m = await Autoplay.moves(); apLast = m; renderMoves(m);
-    if (!m || !m.solo){ apStop("Stopped: auto-play only runs in a Solo Mode duel."); return; }
+    // In bot account mode it waits between duels and while the opponent takes their turn. Otherwise it stops.
+    if (!m || !m.allowed){ if (m && m.botOn) return; apStop("Stopped: auto-play only runs in a Solo Mode duel, or in bot account mode."); return; }
+    if (m.mode === "bot" && !m.myTurn) return;
     const strat = STRATEGIES[apSettings.strategy] || STRATEGIES.none;
     let action = null;
     try { action = strat.decide({moves:m, memory:apMemory}); } catch (e){ apStop("Stopped: the strategy hit an error: " + (e.message || e)); return; }
@@ -127,7 +130,7 @@ async function apTick(){
   }
 }
 function apStart(){
-  if (!apLast || !apLast.solo) return toast("Open a Solo Mode duel on DuelingBook first.");
+  if (!apLast || !(apLast.allowed || apLast.botOn)) return toast("Open a Solo Mode duel, or turn on bot account mode, first.");
   if (apSettings.strategy === "learned" && !mlModel) return toast("Load a trained model first, under Learning.");
   apRunning = true; apMemory = {};
   $("ap-run").textContent = "Stop"; $("ap-run").classList.add("running");
@@ -146,14 +149,16 @@ function renderLock(m){
   const dot = $("ap-dot"), st = $("ap-status");
   if (tabId === null){ dot.className = "dot"; st.textContent = "Open DuelingBook to use auto-play."; return; }
   if (!m){ dot.className = "dot wait"; st.textContent = "Can't reach the DuelingBook page. Reload it."; return; }
-  if (!m.solo){ dot.className = "dot wait"; st.textContent = "Locked. Start a Solo Mode duel on DuelingBook to use auto-play."; return; }
-  dot.className = "dot on"; st.textContent = `Ready: Solo Mode duel, turn ${m.turn || "–"}${m.phase ? `, ${m.phase}` : ""}.`;
+  if (m.botOn && !m.allowed){ dot.className = "dot wait"; st.textContent = `Bot account mode: ${m.lock}`; return; }
+  if (!m.allowed){ dot.className = "dot wait"; st.textContent = "Locked. Start a Solo Mode duel on DuelingBook to use auto-play."; return; }
+  dot.className = "dot on";
+  st.textContent = m.mode === "bot" ? `Ready: bot duel, turn ${m.turn || "–"}${m.myTurn ? ", its turn" : ", their turn"}.` : `Ready: Solo Mode duel, turn ${m.turn || "–"}${m.phase ? `, ${m.phase}` : ""}.`;
 }
 const ZONE_ORDER = ["hand","monster","spell/trap","field","graveyard","banished"];
 function renderMoves(m){
   renderLock(m);
   const box = $("ap-moves");
-  if (!m || !m.solo){ box.innerHTML = `<p class="empty">Open a Solo Mode duel to see plays here.</p>`; return; }
+  if (!m || !m.allowed){ box.innerHTML = `<p class="empty">Open a Solo Mode duel, or a bot duel, to see plays here.</p>`; return; }
   const btn = (action, label) => `<button class="btn small" data-ap='${esc(JSON.stringify(action))}'>${esc(label)}</button>`;
   let h = `<div class="apgroup">Turn</div><div class="row">${m.deck.map(p => btn({type:"deck", play:p}, p)).join("")}${m.globals.map(p => btn({type:"global", play:p}, p)).join("")}</div>`;
   for (const side of ["player1","player2"]){
@@ -190,6 +195,32 @@ function apSyncControls(){
   $("ap-sides").value = apSettings.sides; $("ap-sides-box").hidden = apSettings.strategy !== "learned";
 }
 $("ap-sides").addEventListener("change", () => { apSettings.sides = $("ap-sides").value; apSave(); });
+
+// ---------- Bot account mode ----------
+function botSync(){
+  const checks = [...document.querySelectorAll(".bot-check")], all = checks.every(c => c.checked);
+  $("bot-on").disabled = !all;
+  if (!all && settings.bot){ settings.bot = false; $("bot-on").checked = false; }
+  $("bot-host").disabled = !(all && settings.bot);
+  settings.botAck = all;
+}
+for (const c of document.querySelectorAll(".bot-check")) c.addEventListener("change", () => { botSync(); saveSettings(); });
+$("bot-on").addEventListener("change", () => {
+  settings.bot = $("bot-on").checked; botSync(); saveSettings();
+  toast(settings.bot ? "Bot account mode is on. It only plays people who join its labeled, unrated duel." : "Bot account mode is off.");
+});
+$("bot-keep").addEventListener("change", () => { settings.botKeepHosting = $("bot-keep").checked; saveSettings(); });
+$("bot-host").addEventListener("click", async () => {
+  const r = await Autoplay.request({type:"botHost", format: settings.format});
+  toast(r.ok ? "Hosting a bot duel. It accepts the first person who joins." : `Couldn't host: ${r.reason}`);
+  apLog(r.ok ? "Hosted a bot duel." : `Couldn't host a bot duel: ${r.reason}`);
+});
+api.storage.local.get(["settings"]).then(r => {
+  const st = r.settings || {};
+  if (st.botAck) for (const c of document.querySelectorAll(".bot-check")) c.checked = true;
+  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting;
+  botSync();
+}).catch(() => {});
 
 // ---------- Learning: recording, exporting, and loading a trained model ----------
 async function mlCounts(){

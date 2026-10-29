@@ -140,6 +140,20 @@
       <div class="slider"><label for="ap-delay">Time between plays</label><input type="range" id="ap-delay" min="300" max="3000" step="100" value="900"><output id="ap-delay-out">0.9 s</output></div>
       <div class="row" style="margin-top:12px"><button class="btn primary" id="ap-run">Start</button></div>
     </section>
+    <section class="panel" aria-labelledby="h-bot">
+      <h2 id="h-bot">Bot account</h2>
+      <p class="hint" style="margin:0 0 10px">Lets auto-play duel real people, but only people who choose to play a bot. Log in to DuelingBook with a separate account for the bot. It hosts unrated duels titled "🤖 BOT: you'll be playing YGO Duel Odds, a computer program", and tells each opponent in chat that it's a bot before its first play. It never joins the matchmaking pools, never plays rated duels, and never plays anyone who didn't join its own labeled duel.</p>
+      <fieldset class="modes" id="bot-checks">
+        <legend class="meta">Before turning it on, confirm:</legend>
+        <label class="toggle"><input type="checkbox" class="bot-check"> The bot's account name says it's a bot (it must contain "bot")</label>
+        <label class="toggle"><input type="checkbox" class="bot-check"> The account's profile says it's a bot, run by me</label>
+        <label class="toggle"><input type="checkbox" class="bot-check"> I've asked DuelingBook's staff, and they're OK with it</label>
+      </fieldset>
+      <label class="toggle"><input type="checkbox" id="bot-on" disabled> Bot account mode</label>
+      <label class="toggle sub-opt"><input type="checkbox" id="bot-keep"> Host again after each duel</label>
+      <div class="row" style="margin-top:8px"><button class="btn primary" id="bot-host" disabled>Host a bot duel</button></div>
+      <p class="hint">Open DuelingBook's Duel Room on the bot account with its deck picked, then press <b>Host a bot duel</b>. Choose <b>Learned model</b> under <b>Run it</b> and press <b>Start</b>. Keep this panel open while it plays.</p>
+    </section>
     <section class="panel" aria-labelledby="h-learn">
       <h2 id="h-learn">Learning</h2>
       <label class="toggle"><input type="checkbox" id="ml-record"> Record my plays for training</label>

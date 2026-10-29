@@ -60,19 +60,21 @@
     // Restores the duel after a page reload. A duel already being tracked wins over a stale save.
     if (!on()) T = null;
     else if (r[STORE] && r[STORE].key && (!T || T.key === r[STORE].key)){ T = r[STORE]; T.maxSeen = T.maxSeen || {}; T.soft = T.soft || {}; if (snap) onSnapshot(snap); }
-    toHook("side", settings.side); toHook("pause", !on()); toHook("record", !!settings.record); send();
+    toHook("side", settings.side); toHook("pause", !on()); toHook("record", !!settings.record); toHook("bot", botSettings()); send();
   }).catch(noteError);
   api.storage.onChanged.addListener((ch, area) => {
     if (area !== "local" || !ch.settings) return;
     const prevSide = settings.side, wasOn = on();
     settings = Object.assign(settings, ch.settings.newValue || {});
     if (settings.side !== prevSide){ toHook("side", settings.side); T = null; }
-    toHook("record", !!settings.record);
+    toHook("record", !!settings.record); toHook("bot", botSettings());
     // Turning tracking off forgets the duel. Turning it back on starts over from the board and the duel log.
     if (on() !== wasOn){ T = null; closeWindowsQuiet(); toHook("pause", !on()); if (!on()) api.storage.local.remove(STORE).catch(noteError); }
     send();
   });
   function toHook(kind, data){ window.postMessage({[TAG]:"tracker", kind, data}, "*"); }
+  // Bot account mode only switches on once its owner has confirmed the checklist in the panel.
+  const botSettings = () => ({on: !!(settings.bot && settings.botAck), keepHosting: !!settings.botKeepHosting});
 
   // ---------- Snapshots ----------
   const onBoard = s => s.field.length + s.gy.length + s.ban.length;
