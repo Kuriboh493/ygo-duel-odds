@@ -15,7 +15,7 @@
     if (d.kind === "side"){ sideOverride = d.data || "auto"; lastSig = ""; }
     if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
     if (d.kind === "record") recording = !!d.data;
-    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.keepHosting = !!(d.data && d.data.keepHosting); }
+    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.keepHosting = !!(d.data && d.data.keepHosting); bot.auto = !!(d.data && d.data.auto); if (d.data && d.data.format) bot.format = d.data.format; }
     if (d.kind === "history") post("history", history());
     if (d.kind === "ping") post("pong", true);
     if (d.kind === "exec"){
@@ -158,7 +158,7 @@
   // and the bot has told them in the duel chat that it's a program. It only ever plays its own cards, on its own turn.
   const BOT_NOTE = "\u{1F916} BOT: you'll be playing YGO Duel Odds, a computer program. Unrated.";
   const BOT_HELLO = "Hi! I'm a bot: a computer program trained to play this format, run by its owner to test it. Good luck, have fun!";
-  const bot = {on: false, keepHosting: false, hosted: false, consented: new Set(), announced: new Set(), lastLabel: "", acts: {}};
+  const bot = {on: false, keepHosting: false, auto: false, paused: false, hosted: false, consented: new Set(), announced: new Set(), lastLabel: "", acts: {}};
   const isBotAccount = () => /bot/i.test(G.me() || "");
   const duelKey = () => { const sd = sides(); return `${G.duelId()}|${sd ? sd.opp.username : ""}|${typeof games !== "undefined" ? games : ""}`; };
   function botLock(){
@@ -213,8 +213,13 @@
       once("hello", () => { duelChat(BOT_HELLO); bot.announced.add(duelKey()); });
     if (label === "siding" && consented && typeof doneSiding === "function") once("side", () => doneSiding());
     // Hosts again only after a duel was actually played, never because hosting was cancelled.
-    if (label === "duel_room" && bot.keepHosting && bot.dueled && !(typeof hosting !== "undefined" && hosting))
+    if (label === "duel_room" && (bot.keepHosting || bot.auto) && !bot.paused && bot.dueled && !(typeof hosting !== "undefined" && hosting))
       once("rehost", () => { bot.dueled = false; botHost(bot.format); });
+    // Taking over on login: from the main menu it opens the Duel Room, and hosts its first duel there.
+    // Each happens once per visit, so cancelling the hosting or leaving the room by hand isn't undone.
+    if (bot.auto && !bot.paused && label === "main_menu" && typeof gotoDuelRoom === "function") once("room", () => gotoDuelRoom());
+    if (bot.auto && !bot.paused && label === "duel_room" && !bot.hosted && !(typeof hosting !== "undefined" && hosting))
+      once("autohost", () => { const r = botHost(bot.format); if (!r.ok) post("error", "Bot: " + r.reason); });
   }
   setInterval(() => { try { botTick(); } catch (e){} }, 1000);
   // Someone asked to join a duel: accept them only into the bot's own labeled duel.
@@ -380,6 +385,8 @@
   function execute(req){
     if (req.type === "moves") return {ok: true, moves: moves()};
     if (req.type === "botHost"){ bot.format = req.format; return botHost(req.format); }
+    // Pressing Stop in the panel also stops hosting again, so nobody joins a bot that isn't playing. Start resumes it.
+    if (req.type === "botPause"){ bot.paused = !!req.paused; return {ok: true}; }
     const lock = playLock();
     if (lock) return {ok: false, reason: lock};
     if (!isSolo() && !myTurnNow()) return {ok: false, reason: "It isn't the bot's turn."};

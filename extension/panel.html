@@ -151,8 +151,10 @@
       </fieldset>
       <label class="toggle"><input type="checkbox" id="bot-on" disabled> Bot account mode</label>
       <label class="toggle sub-opt"><input type="checkbox" id="bot-keep"> Host again after each duel</label>
+      <label class="toggle sub-opt"><input type="checkbox" id="bot-auto" disabled> Take over when the bot account logs in</label>
+      <p class="hint sub-opt" style="margin:-4px 0 6px">When you log in as the bot, it opens the Duel Room, hosts its labeled duel, and plays with the learned model, host after host. It hosts with the deck the Duel Room picks first, so make the bot's deck its default. It never does this on an account whose name doesn't say it's a bot. Press <b>Stop</b> to take back control until you reopen this panel.</p>
       <div class="row" style="margin-top:8px"><button class="btn primary" id="bot-host" disabled>Host a bot duel</button></div>
-      <p class="hint">Open DuelingBook's Duel Room on the bot account with its deck picked, then press <b>Host a bot duel</b>. Choose <b>Learned model</b> under <b>Run it</b> and press <b>Start</b>. Keep this panel open while it plays.</p>
+      <p class="hint">Or run it by hand: open DuelingBook's Duel Room on the bot account with its deck picked, then press <b>Host a bot duel</b>. Choose <b>Learned model</b> under <b>Run it</b> and press <b>Start</b>. Keep this panel open while it plays.</p>
     </section>
     <section class="panel" aria-labelledby="h-learn">
       <h2 id="h-learn">Learning</h2>

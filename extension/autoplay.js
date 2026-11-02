@@ -202,14 +202,36 @@ function botSync(){
   $("bot-on").disabled = !all;
   if (!all && settings.bot){ settings.bot = false; $("bot-on").checked = false; }
   $("bot-host").disabled = !(all && settings.bot);
+  $("bot-auto").disabled = !(all && settings.bot);
   settings.botAck = all;
 }
+// Taking over on login: once the bot account is logged in, it starts the learned model by itself. The page hook
+// opens the Duel Room and hosts. Pressing Stop hands control back until the panel is reopened.
+let botTookBack = false, botAutoNote = "";
+async function botAutoTick(){
+  if (!(settings.bot && settings.botAck && settings.botAuto) || apRunning || apBusy || botTookBack) return;
+  const m = await Autoplay.moves();
+  if (!m || !m.botOn || !m.isBotAccount) return;
+  if (!mlModel){
+    if (botAutoNote !== "model") apLog("Bot account logged in, but there's no trained model to play with. Load one under Learning.");
+    botAutoNote = "model"; return;
+  }
+  botAutoNote = "";
+  apSettings.strategy = "learned"; apSyncControls(); apSave();
+  apLast = m; apLog("Bot account logged in: taking over.");
+  apStart();
+}
+setInterval(() => { botAutoTick().catch(() => {}); }, 3000);
 for (const c of document.querySelectorAll(".bot-check")) c.addEventListener("change", () => { botSync(); saveSettings(); });
 $("bot-on").addEventListener("change", () => {
   settings.bot = $("bot-on").checked; botSync(); saveSettings();
   toast(settings.bot ? "Bot account mode is on. It only plays people who join its labeled, unrated duel." : "Bot account mode is off.");
 });
 $("bot-keep").addEventListener("change", () => { settings.botKeepHosting = $("bot-keep").checked; saveSettings(); });
+$("bot-auto").addEventListener("change", () => {
+  settings.botAuto = $("bot-auto").checked; botTookBack = false; saveSettings();
+  toast(settings.botAuto ? "It takes over whenever the bot account is logged in, as long as this panel is open." : "It won't take over on login.");
+});
 $("bot-host").addEventListener("click", async () => {
   const r = await Autoplay.request({type:"botHost", format: settings.format});
   toast(r.ok ? "Hosting a bot duel. It accepts the first person who joins." : `Couldn't host: ${r.reason}`);
@@ -218,7 +240,7 @@ $("bot-host").addEventListener("click", async () => {
 api.storage.local.get(["settings"]).then(r => {
   const st = r.settings || {};
   if (st.botAck) for (const c of document.querySelectorAll(".bot-check")) c.checked = true;
-  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting;
+  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting; $("bot-auto").checked = !!st.botAuto;
   botSync();
 }).catch(() => {});
 
@@ -280,5 +302,8 @@ function apSave(){ api.storage.local.set({autoplay:apSettings}).catch(() => {});
 $("ap-strategy").addEventListener("change", () => { apSettings.strategy = $("ap-strategy").value; apSyncControls(); apSave(); if (apRunning){ apStop("Stopped: strategy changed."); } });
 $("ap-delay").addEventListener("input", () => { apSettings.delay = +$("ap-delay").value; apSyncControls(); });
 $("ap-delay").addEventListener("change", apSave);
-$("ap-run").addEventListener("click", () => apRunning ? apStop() : apStart());
+$("ap-run").addEventListener("click", () => {
+  botTookBack = apRunning; Autoplay.request({type:"botPause", paused: botTookBack});
+  if (apRunning) apStop(); else apStart();
+});
 api.storage.local.get(["autoplay"]).then(r => { if (r.autoplay) Object.assign(apSettings, r.autoplay); if (!STRATEGIES[apSettings.strategy]) apSettings.strategy = "none"; apSyncControls(); }).catch(() => apSyncControls());

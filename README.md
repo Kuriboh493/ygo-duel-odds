@@ -250,6 +250,15 @@ To run it:
 
 From there it handles each duel itself: it accepts the first person who joins, plays rock-paper-scissors, goes first when it wins, posts its announcement, plays its turns with the model, and keeps its deck as it is between games. Keep the panel open while it runs. Everything it does is listed under **What it did**.
 
+### Let it take over when the bot logs in
+
+Tick **Take over when the bot account logs in** under **Bot account mode**, and load a trained model under **Learning**. After that, logging in as the bot is all it takes. It opens the Duel Room, hosts its labeled duel, starts the learned model, and hosts again after each duel.
+
+- It only does this when the logged-in account's name contains "bot", so logging in to your own account does nothing.
+- It hosts with the deck the Duel Room picks first, so make the bot's deck its default deck.
+- Pressing **Stop** hands control back to you. It stops playing and stops hosting again until you press **Start** or reopen the panel.
+- The panel has to stay open, as with every other auto-play mode.
+
 ## Something not working?
 
 | What you see | What to do |
