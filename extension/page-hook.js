@@ -15,7 +15,7 @@
     if (d.kind === "side"){ sideOverride = d.data || "auto"; lastSig = ""; }
     if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
     if (d.kind === "record") recording = !!d.data;
-    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.keepHosting = !!(d.data && d.data.keepHosting); bot.auto = !!(d.data && d.data.auto); if (d.data && d.data.format) bot.format = d.data.format; }
+    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.own = !!(d.data && d.data.own); bot.keepHosting = !!(d.data && d.data.keepHosting); bot.auto = !!(d.data && d.data.auto); if (d.data && d.data.format) bot.format = d.data.format; }
     if (d.kind === "history") post("history", history());
     if (d.kind === "ping") post("pong", true);
     if (d.kind === "exec"){
@@ -139,6 +139,7 @@
       // The board as it was just before this play goes first, so the tracker sees what the play responded to.
       try { if (data && data.play && !paused){ tick(); post("event", summarize(data)); } } catch (e){ post("error", String(e && e.message || e)); }
       try { if (data && data.play) recordDecision(data); } catch (e){ post("error", "Recording: " + String(e && e.message || e)); }
+      try { if (data && data.play) botSaw(data); } catch (e){}
       return orig.apply(this, arguments);
     };
     wrapped.__ygoOdds = true;
@@ -158,13 +159,21 @@
   // and the bot has told them in the duel chat that it's a program. It only ever plays its own cards, on its own turn.
   const BOT_NOTE = "\u{1F916} BOT: you'll be playing YGO Duel Odds, a computer program. Unrated.";
   const BOT_HELLO = "Hi! I'm a bot: a computer program trained to play this format, run by its owner to test it. Good luck, have fun!";
-  const bot = {on: false, keepHosting: false, auto: false, paused: false, hosted: false, consented: new Set(), announced: new Set(), lastLabel: "", acts: {}};
+  // On its owner's own account, the duel's title and this message are the only label, so the message says whose account it is.
+  const BOT_HELLO_OWN = "Hi! I'm a bot: a computer program trained to play this format, playing on its owner's account, as this duel's title says. Good luck, have fun!";
+  const BOT_JUDGE = "Note for the judge: this player is a bot, a computer program, and can't answer questions. Its owner runs it on this account, and everyone it plays joined a duel titled as a bot duel.";
+  const BOT_FORFEIT = "The bot has to stop, so it admits defeat rather than leave you waiting. Thanks for the game!";
+  // own: its owner's own account, chosen in the panel. Everything else about bot duels is the same.
+  const bot = {on: false, own: false, keepHosting: false, auto: false, paused: false, hosted: false, consented: new Set(), announced: new Set(), lastLabel: "", acts: {},
+               oppAt: 0, mineAt: 0, waitAfterMine: 0, beat: 0, duelAt: 0, turnKey: "", turnAt: 0, forfeited: new Set()};
   const isBotAccount = () => /bot/i.test(G.me() || "");
+  // An account that may host bot duels: one whose name says it's a bot, or its owner's own account in own-account mode.
+  const accountOk = () => isBotAccount() || bot.own;
   const duelKey = () => { const sd = sides(); return `${G.duelId()}|${sd ? sd.opp.username : ""}|${typeof games !== "undefined" ? games : ""}`; };
   function botLock(){
     const sd = sides();
     if (!bot.on) return "Bot account mode is off.";
-    if (!isBotAccount()) return "The logged-in account's name has to say it's a bot (contain \"bot\").";
+    if (!accountOk()) return "The logged-in account's name has to say it's a bot (contain \"bot\"), or choose your own account under Bot account.";
     if (!sd || sd.spectating) return "Not in a duel.";
     if (typeof rated === "undefined" || rated !== false) return "Bot account mode only plays unrated duels.";
     if (!bot.consented.has(sd.opp.username)) return "This opponent didn't join the bot's labeled duel, so it won't play them.";
@@ -183,7 +192,7 @@
   function duelChat(message){ if (typeof Send === "function") Send({action: "Duel", play: "Duel message", message, html: 0}); }
   // Hosts an unrated duel under the bot label, through the client's own Host form.
   function botHost(fmt){
-    if (!bot.on || !isBotAccount()) return {ok: false, reason: "Turn on bot account mode, logged in as an account whose name says it's a bot."};
+    if (!bot.on || !accountOk()) return {ok: false, reason: "Turn on bot account mode, logged in as an account whose name says it's a bot, or choose your own account."};
     if (G.label() !== "duel_room") return {ok: false, reason: "Open DuelingBook's Duel Room first."};
     if (typeof hostDuel !== "function" || typeof $ !== "function") return {ok: false, reason: "DuelingBook's Host form wasn't found."};
     const format = fmt === "edison" ? "eu" : "gu";
@@ -196,7 +205,8 @@
   // Answers the parts of a duel around the plays: accepting a joiner, rock-paper-scissors, going first, the
   // announcement, and side decking (it keeps its deck as it is). Each happens once, a moment after it's asked for.
   function botTick(){
-    if (!bot.on || !isBotAccount()) return;
+    if (!bot.on || !accountOk()) return;
+    botPace();
     const label = G.label(), me = G.me();
     if (label !== bot.lastLabel){ bot.lastLabel = label; bot.acts = {}; bot.enteredAt = Date.now(); }
     const waited = Date.now() - (bot.enteredAt || 0) > 1500;
@@ -210,7 +220,7 @@
     if ((label === "tp_start" || label === "tp_start2") && consented && typeof rpsWinner !== "undefined" && rpsWinner === me && typeof pickFirst === "function")
       once("first", () => pickFirst.call(first.find(".content")[0]));
     if (/^duel_start/.test(label) && consented && !bot.announced.has(duelKey()))
-      once("hello", () => { duelChat(BOT_HELLO); bot.announced.add(duelKey()); });
+      once("hello", () => { duelChat(bot.own && !isBotAccount() ? BOT_HELLO_OWN : BOT_HELLO); bot.announced.add(duelKey()); });
     if (label === "siding" && consented && typeof doneSiding === "function") once("side", () => doneSiding());
     // Hosts again only after a duel was actually played, never because hosting was cancelled.
     if (label === "duel_room" && (bot.keepHosting || bot.auto) && !bot.paused && bot.dueled && !(typeof hosting !== "undefined" && hosting))
@@ -221,6 +231,57 @@
     if (bot.auto && !bot.paused && label === "duel_room" && !bot.hosted && !(typeof hosting !== "undefined" && hosting))
       once("autohost", () => { const r = botHost(bot.format); if (!r.ok) post("error", "Bot: " + r.reason); });
   }
+  // ---------- Pace in bot duels ----------
+  // DuelingBook's rules set no time limits, only a reasonable pace: AFK for 6 minutes, or 30 seconds without answering
+  // a judge, loses the game, and stalling on purpose is cheating. DuelingBook has no automatic response windows either:
+  // a player responds by making a play. So in a bot duel it waits for the opponent to have a chance to respond, but never
+  // leaves them waiting:
+  //   it makes no play while the opponent is in the middle of plays (until they've been quiet for RESPOND_MS),
+  //   and after its own plays an opponent might respond to (summons, activations, attacks, entering the Battle Phase),
+  //   it ends its turn if it hasn't managed a play in STUCK_MS, and admits defeat after FORFEIT_MS,
+  //   and it admits defeat if the panel stops running it mid-duel for HEARTBEAT_MS (closed, or switched off).
+  const RESPOND_MS = 3000, BOT_GAP_MS = 1500, STUCK_MS = 60000, FORFEIT_MS = 90000, HEARTBEAT_MS = 20000;
+  const QUIET_PLAYS = /^(Draw card|Enter (DP|SP|M1|M2|EP)|Set |To ATK|To DEF|Duel message|Typing|Stop typing)/;
+  const inBotDuel = () => {
+    const sd = sides();
+    return !isSolo() && bot.on && accountOk() && !!sd && !sd.spectating && /^duel_start/.test(G.label()) && bot.consented.has(sd.opp.username);
+  };
+  function botSaw(d){
+    if (!inBotDuel()) return;
+    const me = G.me(), play = String(d.play);
+    if (d.username && d.username !== me && !/^(Duel message|Typing|Stop typing)/.test(play)) bot.oppAt = Date.now();
+    if (d.username === me) bot.waitAfterMine = QUIET_PLAYS.test(play) ? 0 : RESPOND_MS;
+    // A judge is called: tell them what they're dealing with, once per duel.
+    if (play === "Call admin") once("judge|" + duelKey(), () => duelChat(BOT_JUDGE));
+  }
+  // Why a play has to wait for now, or null.
+  function botWait(){
+    const now = Date.now();
+    if (now - lastExec < BOT_GAP_MS) return TOO_SOON;
+    if (now - bot.oppAt < RESPOND_MS) return "Giving the opponent time to finish responding.";
+    if (now - lastExec < bot.waitAfterMine) return "Giving the opponent a chance to respond.";
+    return null;
+  }
+  function botForfeit(why){
+    const k = duelKey();
+    if (!inBotDuel() || bot.forfeited.has(k)) return {ok: false, reason: "Not in a bot duel."};
+    bot.forfeited.add(k);
+    duelChat(BOT_FORFEIT); post("error", "Bot: admitted defeat. " + why);
+    setTimeout(() => { if (typeof admitDefeat === "function") admitDefeat(); else Send({action: "Duel", play: "Admit defeat"}); }, 800);
+    return {ok: true};
+  }
+  function botPace(){
+    if (!inBotDuel()){ bot.duelAt = 0; return; }
+    const now = Date.now();
+    if (!bot.duelAt) bot.duelAt = now;
+    if (now - Math.max(bot.beat, bot.duelAt) > HEARTBEAT_MS) return void botForfeit("The panel stopped running it.");
+    if (!myTurnNow()){ bot.turnKey = ""; return; }
+    const tk = duelKey() + "|" + G.turn();
+    if (bot.turnKey !== tk){ bot.turnKey = tk; bot.turnAt = now; }
+    const idle = now - Math.max(lastExec, bot.turnAt, bot.oppAt);
+    if (idle > FORFEIT_MS) botForfeit("It was stuck on its turn.");
+    else if (idle > STUCK_MS) once("stuck|" + tk, () => { lastExec = now; Send({action: "Duel", play: "End turn"}); post("error", "Bot: stuck on its turn, so it ended it."); });
+  }
   setInterval(() => { try { botTick(); } catch (e){} }, 1000);
   // Someone asked to join a duel: accept them only into the bot's own labeled duel.
   function wrapJoin(){
@@ -230,8 +291,10 @@
       const r = orig.apply(this, arguments);
       try {
         const who = data && data.username;
-        if (bot.on && isBotAccount() && bot.hosted && who && who !== G.me()) setTimeout(() => {
+        if (bot.on && accountOk() && bot.hosted && who && who !== G.me()) setTimeout(() => {
           if (!(typeof hosting !== "undefined" && hosting)) return;
+          // Only joiners of the bot's own labeled duel. If its owner hosts a duel of their own, the joiner never saw the label.
+          if ($("#host .duel_note_txt").val() !== BOT_NOTE) return;
           const cell = $("#joinlist .cell2").filter(function(){ return $(this).data("username") === who; }).first();
           bot.consented.add(who);
           if (cell.length && typeof acceptUser === "function"){ $("#joinlist .cell2").removeClass("selected"); cell.addClass("selected"); acceptUser(); }
@@ -247,6 +310,7 @@
   const MIN_GAP_MS = 300;
   const SKIP_ITEMS = new Set(["This is backwards","This looks right"]);
   let lastExec = 0;
+  const TOO_SOON = "Too soon after the last play.";
 
   // Runs a menu builder with showMenu swapped for a recorder, so the menu's items come back instead of appearing.
   function captureMenu(build){
@@ -279,7 +343,7 @@
   function moves(){
     const p1 = G.p1(), p2 = G.p2();
     const lock = playLock(), solo_ = isSolo();
-    const base = {solo: solo_, allowed: !lock, lock, mode: solo_ ? "solo" : "bot", isBotAccount: isBotAccount(), botOn: bot.on, label: G.label(),
+    const base = {solo: solo_, allowed: !lock, lock, mode: solo_ ? "solo" : "bot", isBotAccount: isBotAccount(), accountOk: accountOk(), botOn: bot.on, inBotDuel: inBotDuel(), label: G.label(),
                   turn: G.turn(), turnPlayer: G.turnPlayer(), phase: G.phase(), me: p1 && p1.username, other: p2 && p2.username};
     if (lock || !p1 || !p2) return Object.assign(base, {cards: [], deck: [], globals: []});
     // In Solo you control both sides, so both are listed. Against a person, only the bot's own side.
@@ -383,14 +447,18 @@
   }
 
   function execute(req){
-    if (req.type === "moves") return {ok: true, moves: moves()};
+    if (req.type === "moves"){ if (req.beat) bot.beat = Date.now(); return {ok: true, moves: moves()}; }
+    if (req.type === "botForfeit") return botForfeit(req.why || "");
     if (req.type === "botHost"){ bot.format = req.format; return botHost(req.format); }
     // Pressing Stop in the panel also stops hosting again, so nobody joins a bot that isn't playing. Start resumes it.
     if (req.type === "botPause"){ bot.paused = !!req.paused; return {ok: true}; }
     const lock = playLock();
     if (lock) return {ok: false, reason: lock};
     if (!isSolo() && !myTurnNow()) return {ok: false, reason: "It isn't the bot's turn."};
-    if (Date.now() - lastExec < MIN_GAP_MS) return {ok: false, reason: "Too soon after the last play."};
+    // wait: the play may be fine, just not yet. The panel tries again without logging it.
+    if (Date.now() - lastExec < MIN_GAP_MS) return {ok: false, reason: TOO_SOON, wait: true};
+    const wait = !isSolo() && botWait();
+    if (wait) return {ok: false, reason: wait, wait: true};
     if (typeof Send !== "function" || typeof cardMenuClicked !== "function") return {ok: false, reason: "DuelingBook's play functions weren't found."};
     const p1 = G.p1();
     if (req.type === "global"){

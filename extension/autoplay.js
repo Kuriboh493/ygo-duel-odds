@@ -23,7 +23,8 @@ const Autoplay = {
     try { return (await api.tabs.sendMessage(tabId, {type:"exec", req})) || {ok:false, reason:"The DuelingBook page didn't answer. Reload it."}; }
     catch (e){ return {ok:false, reason:"Lost the DuelingBook tab. Reload it."}; }
   },
-  async moves(){ const r = await this.request({type:"moves"}); return r.ok ? r.moves : null; },
+  // beat: tells the page it's still being run, so in a bot duel it doesn't admit defeat for a closed panel.
+  async moves(beat){ const r = await this.request({type:"moves", beat: !!beat}); return r.ok ? r.moves : null; },
   perform(action){ return this.request(action); },
 };
 
@@ -109,14 +110,14 @@ async function apPerform(action, m, quietRetry){
   const r = await Autoplay.perform(req);
   const what = describeAction(action, m) + (why ? ` (${why})` : "");
   if (r.ok){ apLog(what, "auto"); if (remember) Object.assign(apMemory, remember); }
-  else if (!(quietRetry && r.reason === TOO_SOON)) apLog(`Couldn't ${what}: ${r.reason}`);
+  else if (!(quietRetry && (r.wait || r.reason === TOO_SOON))) apLog(`Couldn't ${what}: ${r.reason}`);
   return r;
 }
 async function apTick(){
   if (!apRunning || apBusy) return;
   apBusy = true;
   try {
-    const m = await Autoplay.moves(); apLast = m; renderMoves(m);
+    const m = await Autoplay.moves(true); apLast = m; renderMoves(m);
     // In bot account mode it waits between duels and while the opponent takes their turn. Otherwise it stops.
     if (!m || !m.allowed){ if (m && m.botOn) return; apStop("Stopped: auto-play only runs in a Solo Mode duel, or in bot account mode."); return; }
     if (m.mode === "bot" && !m.myTurn) return;
@@ -139,6 +140,8 @@ function apStart(){
 }
 function apStop(why){
   const was = apRunning;
+  // Stopping mid bot duel admits defeat, so the opponent isn't left waiting on a bot that isn't playing.
+  if (was && apLast && apLast.inBotDuel) Autoplay.request({type:"botForfeit", why: why || "Stopped."}).then(r => { if (r.ok) apLog("Admitted defeat in the bot duel, since it stopped mid-duel."); });
   apRunning = false; clearTimeout(apTimer);
   $("ap-run").textContent = "Start"; $("ap-run").classList.remove("running");
   if (was) apLog(why || "Stopped.");
@@ -197,8 +200,12 @@ function apSyncControls(){
 $("ap-sides").addEventListener("change", () => { apSettings.sides = $("ap-sides").value; apSave(); });
 
 // ---------- Bot account mode ----------
+const botKind = () => settings.botKind === "own" ? "own" : "bot";
+const botChecks = () => [...document.querySelectorAll(`.bot-checks[data-kind=${botKind()}] .bot-check`)];
 function botSync(){
-  const checks = [...document.querySelectorAll(".bot-check")], all = checks.every(c => c.checked);
+  $("bot-kind").value = botKind();
+  for (const f of document.querySelectorAll(".bot-checks")) f.hidden = f.dataset.kind !== botKind();
+  const checks = botChecks(), all = checks.every(c => c.checked);
   $("bot-on").disabled = !all;
   if (!all && settings.bot){ settings.bot = false; $("bot-on").checked = false; }
   $("bot-host").disabled = !(all && settings.bot);
@@ -225,22 +232,30 @@ function aiSet(on, why){
 }
 async function takeoverTick(){
   if (!settings.botAuto || apBusy) return;
-  if (apRunning){ aiNote("run", apLast && apLast.mode === "bot" ? "Playing on the bot account." : "Playing this Solo Mode duel."); return; }
+  if (apRunning){ aiNote("run", apLast && apLast.mode === "bot" ? (apLast.isBotAccount ? "Playing on the bot account." : "Playing labeled bot duels on your account.") : "Playing this Solo Mode duel."); return; }
   if (!mlModel) return aiNote("model", "Waiting: load a trained model under Learning.");
   const m = await Autoplay.moves();
   if (!m) return aiNote("page", "Waiting for the DuelingBook page. Open or reload it.");
-  const solo = m.solo && m.allowed, botAcct = m.botOn && m.isBotAccount;
+  const solo = m.solo && m.allowed, botAcct = m.botOn && m.accountOk;
   if (solo || botAcct){
     apSettings.strategy = "learned"; apSyncControls(); apSave();
     apLast = m; apLog(botAcct ? "Bot account logged in: taking over." : "Solo Mode duel open: taking over.");
     apStart(); aiNoteKey = ""; return;
   }
+  if (botKind() === "own") return aiNote("ownoff", "Waiting: open a Solo Mode duel, or confirm the checklist under Bot account to host bot duels on your account.");
   if (m.isBotAccount) return aiNote("botoff", "Waiting: this is a bot account, but bot account mode is off. Confirm the checklist under Bot account.");
   aiNote("wait", "Waiting: open a Solo Mode duel, or log in as your bot account. On any other account it never plays.");
 }
 setInterval(() => { takeoverTick().catch(() => {}); }, 3000);
 $("ai-on").addEventListener("change", () => aiSet($("ai-on").checked));
 for (const c of document.querySelectorAll(".bot-check")) c.addEventListener("change", () => { botSync(); saveSettings(); });
+// Switching accounts starts the checklist over, since the other account's confirmations don't apply.
+$("bot-kind").addEventListener("change", () => {
+  settings.botKind = $("bot-kind").value; settings.bot = false; $("bot-on").checked = false;
+  for (const c of document.querySelectorAll(".bot-check")) c.checked = false;
+  botSync(); saveSettings();
+  toast(botKind() === "own" ? "It will host bot duels on your own account. Confirm the checklist to turn it on." : "It will run on a separate bot account.");
+});
 $("bot-on").addEventListener("change", () => {
   settings.bot = $("bot-on").checked; botSync(); saveSettings();
   toast(settings.bot ? "Bot account mode is on. It only plays people who join its labeled, unrated duel." : "Bot account mode is off.");
@@ -253,7 +268,8 @@ $("bot-host").addEventListener("click", async () => {
 });
 api.storage.local.get(["settings"]).then(r => {
   const st = r.settings || {};
-  if (st.botAck) for (const c of document.querySelectorAll(".bot-check")) c.checked = true;
+  settings.botKind = st.botKind;
+  if (st.botAck) for (const c of botChecks()) c.checked = true;
   $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting;
   botSync(); aiSync();
 }).catch(() => {});

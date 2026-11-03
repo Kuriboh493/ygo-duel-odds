@@ -133,7 +133,7 @@
         <span class="track" aria-hidden="true"></span><span>AI takes over</span><span class="power-lbl" id="ai-lbl">Off</span>
       </label>
       <p class="meta" id="ai-note" style="margin:0 0 8px"></p>
-      <p class="hint" style="margin:8px 0 0">Auto-play can make any play you could click on DuelingBook: summon, set, activate, attack, change phases and end the turn. It only plays in DuelingBook's <b>Solo</b> mode, where you play both sides, or on a <b>bot account</b> against people who joined its labeled duel. It never plays for you against someone who thinks they're playing you.</p>
+      <p class="hint" style="margin:8px 0 0">Auto-play can make any play you could click on DuelingBook: summon, set, activate, attack, change phases and end the turn. It only plays in DuelingBook's <b>Solo</b> mode, where you play both sides, or in <b>bot duels</b> (on a bot account, or on your own) against people who joined its labeled duel. It never plays for you against someone who thinks they're playing you.</p>
     </section>
     <section class="panel" aria-labelledby="h-aprun">
       <h2 id="h-aprun">Run it</h2>
@@ -147,16 +147,25 @@
     </section>
     <section class="panel" aria-labelledby="h-bot">
       <h2 id="h-bot">Bot account</h2>
-      <p class="hint" style="margin:0 0 10px">Lets auto-play duel real people, but only people who choose to play a bot. Log in to DuelingBook with a separate account for the bot. It hosts unrated duels titled "🤖 BOT: you'll be playing YGO Duel Odds, a computer program", and tells each opponent in chat that it's a bot before its first play. It never joins the matchmaking pools, never plays rated duels, and never plays anyone who didn't join its own labeled duel.</p>
-      <fieldset class="modes" id="bot-checks">
+      <p class="hint" style="margin:0 0 10px">Lets auto-play duel real people, but only people who choose to play a bot. It runs on a separate account for the bot, or on your own account. Either way it hosts unrated duels titled "🤖 BOT: you'll be playing YGO Duel Odds, a computer program", and tells each opponent in chat that it's a bot before its first play. It never joins the matchmaking pools, never plays rated duels, and never plays anyone who didn't join its own labeled duel.</p>
+      <p class="hint" style="margin:0 0 10px">In bot duels it paces itself: about 1.5 seconds between plays, and 3 seconds after a play the opponent might respond to, or after the opponent's own plays. If it's stuck on its turn for a minute it ends the turn, and if it has to stop mid-duel (you press Stop, or close this panel) it admits defeat, so nobody is left waiting.</p>
+      <label for="bot-kind" class="meta">Which account it plays on</label>
+      <select id="bot-kind" style="margin:4px 0 10px"><option value="bot">A separate bot account (its name contains "bot")</option><option value="own">My own account (bot duels only)</option></select>
+      <fieldset class="modes bot-checks" data-kind="bot">
         <legend class="meta">Before turning it on, confirm:</legend>
         <label class="toggle"><input type="checkbox" class="bot-check"> The bot's account name says it's a bot (it must contain "bot")</label>
         <label class="toggle"><input type="checkbox" class="bot-check"> The account's profile says it's a bot, run by me</label>
         <label class="toggle"><input type="checkbox" class="bot-check"> I've asked DuelingBook's staff, and they're OK with it</label>
       </fieldset>
+      <fieldset class="modes bot-checks" data-kind="own" hidden>
+        <legend class="meta">Before turning it on, confirm:</legend>
+        <label class="toggle"><input type="checkbox" class="bot-check"> I understand opponents will only know it's a bot from its duel's title and its chat message, because my name doesn't say so</label>
+        <label class="toggle"><input type="checkbox" class="bot-check"> I understand DuelingBook's staff can ban accounts at their discretion, and this is my main account</label>
+        <p class="hint" style="margin:0">It still only plays people who join its labeled bot duel, never pool, rated or challenge duels. Saying so in your profile while it runs helps too.</p>
+      </fieldset>
       <label class="toggle"><input type="checkbox" id="bot-on" disabled> Bot account mode</label>
       <label class="toggle sub-opt"><input type="checkbox" id="bot-keep"> Host again after each duel</label>
-      <p class="hint sub-opt" style="margin:-4px 0 6px">With bot account mode on, the <b>AI takes over</b> switch at the top of this tab does the rest: when you log in as the bot, it opens the Duel Room, hosts its labeled duel, and plays with the learned model, host after host. It hosts with the deck the Duel Room picks first, so make the bot's deck its default. It never does this on an account whose name doesn't say it's a bot.</p>
+      <p class="hint sub-opt" style="margin:-4px 0 6px">With bot account mode on, the <b>AI takes over</b> switch at the top of this tab does the rest: when you log in as the bot, it opens the Duel Room, hosts its labeled duel, and plays with the learned model, host after host. It hosts with the deck the Duel Room picks first, so make the bot's deck its default. On a separate bot account, it never does this unless the account's name says it's a bot.</p>
       <div class="row" style="margin-top:8px"><button class="btn primary" id="bot-host" disabled>Host a bot duel</button></div>
       <p class="hint">Or run it by hand: open DuelingBook's Duel Room on the bot account with its deck picked, then press <b>Host a bot duel</b>. Choose <b>Learned model</b> under <b>Run it</b> and press <b>Start</b>. Keep this panel open while it plays.</p>
     </section>

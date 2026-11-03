@@ -74,7 +74,7 @@
   });
   function toHook(kind, data){ window.postMessage({[TAG]:"tracker", kind, data}, "*"); }
   // Bot account mode only switches on once its owner has confirmed the checklist in the panel.
-  const botSettings = () => ({on: !!(settings.bot && settings.botAck), keepHosting: !!settings.botKeepHosting, auto: !!(settings.bot && settings.botAck && settings.botAuto), format: settings.format});
+  const botSettings = () => ({on: !!(settings.bot && settings.botAck), own: settings.botKind === "own", keepHosting: !!settings.botKeepHosting, auto: !!(settings.bot && settings.botAck && settings.botAuto), format: settings.format});
 
   // ---------- Snapshots ----------
   const onBoard = s => s.field.length + s.gy.length + s.ban.length;
