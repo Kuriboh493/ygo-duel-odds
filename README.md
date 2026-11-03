@@ -288,7 +288,7 @@ These always apply, whether you use the switch or **Start**:
 It would be easy to let it play on your own account against anyone. It deliberately doesn't, and there's no setting to make it:
 
 - **It's unfair to your opponent.** They think they're playing you. Secretly playing them with a program takes away their choice about whether to play a bot.
-- **DuelingBook treats it as cheating.** Outside help during a duel against a person is against the site's rules, and the account it's played on can be banned. That would be your main account, with its rating and history.
+- **It puts your account at risk.** [DuelingBook's rules](https://www.duelingbook.com/rules) don't mention bots either way, but staff "reserve the right to ban or suspend accounts at our discretion with or without warning", and you're responsible for everything done on your account. If they decided a hidden bot wasn't OK, the account banned would be your main one, with its rating and history.
 - **The bot account is the honest way to do it.** If you want the AI to play real people, give it its own labeled account. Then everyone who plays it has chosen to, and your own account is never at risk. See the next section.
 
 
