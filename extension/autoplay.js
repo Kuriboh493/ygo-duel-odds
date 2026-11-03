@@ -261,6 +261,7 @@ $("bot-on").addEventListener("change", () => {
   toast(settings.bot ? "Bot account mode is on. It only plays people who join its labeled, unrated duel." : "Bot account mode is off.");
 });
 $("bot-keep").addEventListener("change", () => { settings.botKeepHosting = $("bot-keep").checked; saveSettings(); });
+$("bot-fun").addEventListener("change", () => { settings.botFun = $("bot-fun").checked; saveSettings(); toast(settings.botFun ? "It'll add a joke to its chat messages. I'll be back." : "Chat messages are plain."); });
 $("bot-host").addEventListener("click", async () => {
   const r = await Autoplay.request({type:"botHost", format: settings.format});
   toast(r.ok ? "Hosting a bot duel. It accepts the first person who joins." : `Couldn't host: ${r.reason}`);
@@ -270,7 +271,7 @@ api.storage.local.get(["settings"]).then(r => {
   const st = r.settings || {};
   settings.botKind = st.botKind;
   if (st.botAck) for (const c of botChecks()) c.checked = true;
-  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting;
+  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting; $("bot-fun").checked = st.botFun !== false;
   botSync(); aiSync();
 }).catch(() => {});
 

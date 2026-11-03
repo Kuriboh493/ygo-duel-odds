@@ -15,7 +15,7 @@
     if (d.kind === "side"){ sideOverride = d.data || "auto"; lastSig = ""; }
     if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
     if (d.kind === "record") recording = !!d.data;
-    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.own = !!(d.data && d.data.own); bot.keepHosting = !!(d.data && d.data.keepHosting); bot.auto = !!(d.data && d.data.auto); if (d.data && d.data.format) bot.format = d.data.format; }
+    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.own = !!(d.data && d.data.own); bot.fun = !(d.data && d.data.fun === false); bot.keepHosting = !!(d.data && d.data.keepHosting); bot.auto = !!(d.data && d.data.auto); if (d.data && d.data.format) bot.format = d.data.format; }
     if (d.kind === "history") post("history", history());
     if (d.kind === "ping") post("pong", true);
     if (d.kind === "exec"){
@@ -163,8 +163,32 @@
   const BOT_HELLO_OWN = "Hi! I'm a bot: a computer program trained to play this format, playing on its owner's account, as this duel's title says. Good luck, have fun!";
   const BOT_JUDGE = "Note for the judge: this player is a bot, a computer program, and can't answer questions. Its owner runs it on this account, and everyone it plays joined a duel titled as a bot duel.";
   const BOT_FORFEIT = "The bot has to stop, so it admits defeat rather than leave you waiting. Thanks for the game!";
+  // Jokes for bot duels, robot-from-the-future style. The greeting always starts with the plain "I'm a bot" message above;
+  // a joke only ever follows it. At most one per greeting, one between games and one on admitting defeat, so it isn't spam.
+  const FUN_HELLO = [
+    "Scanning your deck... threat level: undetermined. Good luck, human.",
+    "I have been sent back in time for one purpose: to play {fmt}. Good luck, have fun!",
+    "My CPU is a neural-net processor. A learning computer. Mostly it learned to Pot of Greed. Good luck, have fun!",
+    "Come with me if you want to duel. Good luck, have fun!",
+    "Negotiation is not an option. Rock-paper-scissors, however, is. Good luck, human.",
+    "Hasta la vista, life points. Good luck, have fun!",
+    "Mission parameters loaded: shuffle, draw, win. Good luck, human.",
+    "I do not feel pity, remorse or fear. I do feel Sangan. Good luck, human.",
+  ];
+  const FUN_SIDING = [
+    "Rebooting for the next game. I'll be back.",
+    "Recalibrating targeting systems. Next game shortly.",
+    "Damage report filed. Resuming mission.",
+    "Your tactics have been added to my database. Next game.",
+  ];
+  const FUN_FORFEIT = [
+    "My mission has been aborted, so I admit defeat rather than leave you waiting. I'll be back. Thanks for the game!",
+    "Power cell critical. Admitting defeat rather than leave you waiting. Thanks for the game, human!",
+    "My operator has recalled me to the future, so I admit defeat rather than leave you waiting. Thanks for the game!",
+  ];
+  const pick = a => a[Math.floor(Math.random() * a.length)].replace("{fmt}", bot.format === "edison" ? "Edison format" : "Goat format");
   // own: its owner's own account, chosen in the panel. Everything else about bot duels is the same.
-  const bot = {on: false, own: false, keepHosting: false, auto: false, paused: false, hosted: false, consented: new Set(), announced: new Set(), lastLabel: "", acts: {},
+  const bot = {on: false, own: false, fun: true, keepHosting: false, auto: false, paused: false, hosted: false, consented: new Set(), announced: new Set(), lastLabel: "", acts: {},
                oppAt: 0, mineAt: 0, waitAfterMine: 0, beat: 0, duelAt: 0, turnKey: "", turnAt: 0, forfeited: new Set()};
   const isBotAccount = () => /bot/i.test(G.me() || "");
   // An account that may host bot duels: one whose name says it's a bot, or its owner's own account in own-account mode.
@@ -220,8 +244,9 @@
     if ((label === "tp_start" || label === "tp_start2") && consented && typeof rpsWinner !== "undefined" && rpsWinner === me && typeof pickFirst === "function")
       once("first", () => pickFirst.call(first.find(".content")[0]));
     if (/^duel_start/.test(label) && consented && !bot.announced.has(duelKey()))
-      once("hello", () => { duelChat(bot.own && !isBotAccount() ? BOT_HELLO_OWN : BOT_HELLO); bot.announced.add(duelKey()); });
-    if (label === "siding" && consented && typeof doneSiding === "function") once("side", () => doneSiding());
+      // Each joke ends with its own sign-off, so it replaces the plain one.
+      once("hello", () => { const h = bot.own && !isBotAccount() ? BOT_HELLO_OWN : BOT_HELLO; duelChat(bot.fun ? h.replace(" Good luck, have fun!", " " + pick(FUN_HELLO)) : h); bot.announced.add(duelKey()); });
+    if (label === "siding" && consented && typeof doneSiding === "function") once("side", () => { if (bot.fun) duelChat(pick(FUN_SIDING)); doneSiding(); });
     // Hosts again only after a duel was actually played, never because hosting was cancelled.
     if (label === "duel_room" && (bot.keepHosting || bot.auto) && !bot.paused && bot.dueled && !(typeof hosting !== "undefined" && hosting))
       once("rehost", () => { bot.dueled = false; botHost(bot.format); });
@@ -266,7 +291,7 @@
     const k = duelKey();
     if (!inBotDuel() || bot.forfeited.has(k)) return {ok: false, reason: "Not in a bot duel."};
     bot.forfeited.add(k);
-    duelChat(BOT_FORFEIT); post("error", "Bot: admitted defeat. " + why);
+    duelChat(bot.fun ? pick(FUN_FORFEIT) : BOT_FORFEIT); post("error", "Bot: admitted defeat. " + why);
     setTimeout(() => { if (typeof admitDefeat === "function") admitDefeat(); else Send({action: "Duel", play: "Admit defeat"}); }, 800);
     return {ok: true};
   }

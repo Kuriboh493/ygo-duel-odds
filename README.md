@@ -347,6 +347,16 @@ To run it:
 
 From there it handles each duel itself: it accepts the first person who joins, plays rock-paper-scissors, goes first when it wins, posts its announcement, plays its turns with the model, and keeps its deck as it is between games. Keep the panel open while it runs. Everything it does is listed under **What it did**.
 
+### Robot jokes in chat
+
+With **Robot-from-the-future jokes in chat** ticked under **Bot account** (it's on unless you untick it), the bot's chat messages get a joke in the style of a killer robot sent back in time:
+
+- **Its greeting** keeps the plain "Hi! I'm a bot: a computer program…" message first, so nobody misses that it's a bot, and swaps the usual sign-off for a joke, such as "Come with me if you want to duel." or "Scanning your deck... threat level: undetermined. Good luck, human."
+- **Between games of a match** it posts one line, such as "Rebooting for the next game. I'll be back."
+- **If it has to admit defeat** it says why with a joke, such as "Power cell critical. Admitting defeat rather than leave you waiting. Thanks for the game, human!"
+
+That's at most three messages a game, so it isn't chat spam. Its note for a judge always stays plain. Untick the box for plain messages. The lines are `FUN_HELLO`, `FUN_SIDING` and `FUN_FORFEIT` in `extension/page-hook.js` if you want to add your own.
+
 ### Let it take over when the bot logs in
 
 Once the three confirmations are ticked and a model is loaded, the [AI takes over](#the-ai-takes-over-switch) switch does everything above for you. Flip it on, and logging in as the bot is all it takes. It turns on bot account mode, opens the Duel Room, hosts its labeled duel, starts the learned model, and hosts again after each duel.
