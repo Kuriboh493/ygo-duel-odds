@@ -10,7 +10,7 @@
 //    opp: {lp, deck, hand:<count>, mon:[card], st:[card], gy, ban},
 //    cands:[{key, play, card:{name, ctype, zone, pos, atk, def, level}, target:{...} or null}], chosen:<index>}
 // Opponent cards only carry names and stats when they're face-up; face-down ones have pos "FD" and nothing else.
-const FEATURES_VERSION = 4;
+const FEATURES_VERSION = 5;
 
 function fBucket(x, edges){
   if (x === null || x === undefined || x !== x) return "na";
@@ -71,6 +71,15 @@ function featurize(rec, cand){
   const ofd = Math.min((opp.mon || []).filter(x => x && x.pos === "FD").length, 2);
   const gyld = ((fNum(me.gyLight) || 0) > 0 ? "L" : "-") + ((fNum(me.gyDark) || 0) > 0 ? "D" : "-");
   out.push(p + "|ofd:" + ofd);
+  // Whether the monsters already attacking could finish them: their field empty and your face-up attackers' ATK at least their LP.
+  const myAtk = (me.mon || []).filter(x => x && x.pos === "ATK").reduce((t, x) => t + (fNum(x.atk) || 0), 0), olp = fNum(opp.lp);
+  const lethal = olp !== null && !(opp.mon || []).length && myAtk >= olp ? 1 : 0;
+  out.push(p + "|lth:" + lethal);
+  out.push(p + "|t1:" + ((fNum(rec.turn) || 0) <= 1 ? 1 : 0));
+  out.push(p + "|mst:" + Math.min(myst, 3));
+  if (c.pos) out.push(p + "|pos:" + c.pos);
+  // Not here: the names of the other cards in your hand, crossed with the play. Tried and dropped, because those
+  // features are so many and so sparse that models with them won fewer simulated games.
   if (c.name){
     // The card itself against the board, so it can learn when each card is worth playing:
     // Nobleman of Crossout into a face-down monster, Black Luster Soldier once the graveyard has LIGHT and DARK.
@@ -82,6 +91,9 @@ function featurize(rec, cand){
     out.push(n + "|ost:" + Math.min((opp.st || []).length, 3));
     out.push(n + "|oh:" + fBucket(fNum(opp.hand) || 0, [0, 1, 3, 5]));
     out.push(n + "|gy:" + gyld);
+    out.push(n + "|lth:" + lethal);
+    out.push(n + "|mlp:" + fBucket(fNum(me.lp), [0, 1000, 2000, 4000, 8000]));
+    if (c.pos) out.push(n + "|pos:" + c.pos);
   }
   if (cand.target){
     const b = fBattle(c, cand.target);

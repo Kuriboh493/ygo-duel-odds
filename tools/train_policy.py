@@ -12,12 +12,20 @@ the model scores each one as the sum of its feature weights, and training raises
 actually made relative to the others. It's trained with AdaGrad and L2 regularization, and scored on duels
 it never saw, against two baselines: picking at random, and picking the most common kind of play.
 
+Decisions from tools/sim_goat.py's look-ahead teacher also carry the value the teacher measured for each play
+(cvals). With --soft-temp above 0 they're trained as soft targets (plays the teacher saw as equally good share
+the credit) and --adv-scale weights decisions by how clearly the best play won. Both are off by default: with
+the teacher's few noisy rollouts, soft targets taught the model to prefer safe plays like ending the turn, and
+models trained on them won fewer games than ones trained on the teacher's pick alone. The "near-best" score
+reported on teacher data is how often the model's pick is one the teacher rated within 0.01 of its best.
+
 No extra packages are needed.
 """
 import argparse, json, math, random, sys, time
+from array import array
 from collections import Counter, defaultdict
 
-FEATURES_VERSION = 4
+FEATURES_VERSION = 5
 
 # ---------- Features: a line-for-line copy of extension/features.js ----------
 def f_num(x):
@@ -99,6 +107,14 @@ def featurize(rec, cand):
     ofd = min(len([x for x in (opp.get("mon") or []) if x and x.get("pos") == "FD"]), 2)
     gyld = ("L" if (f_num(me.get("gyLight")) or 0) > 0 else "-") + ("D" if (f_num(me.get("gyDark")) or 0) > 0 else "-")
     out.append(p + "|ofd:" + str(ofd))
+    my_atk = sum((f_num(x.get("atk")) or 0) for x in (me.get("mon") or []) if x and x.get("pos") == "ATK")
+    olp = f_num(opp.get("lp"))
+    lethal = 1 if olp is not None and not (opp.get("mon") or []) and my_atk >= olp else 0
+    out.append(p + "|lth:" + str(lethal))
+    out.append(p + "|t1:" + ("1" if (f_num(rec.get("turn")) or 0) <= 1 else "0"))
+    out.append(p + "|mst:" + str(min(myst, 3)))
+    if c.get("pos"):
+        out.append(p + "|pos:" + c["pos"])
     if c.get("name"):
         n = p + "|n:" + c["name"]
         out.append(n)
@@ -108,6 +124,10 @@ def featurize(rec, cand):
         out.append(n + "|ost:" + str(ost))
         out.append(n + "|oh:" + f_bucket(f_num(opp.get("hand")) or 0, [0, 1, 3, 5]))
         out.append(n + "|gy:" + gyld)
+        out.append(n + "|lth:" + str(lethal))
+        out.append(n + "|mlp:" + f_bucket(f_num(me.get("lp")), [0, 1000, 2000, 4000, 8000]))
+        if c.get("pos"):
+            out.append(n + "|pos:" + c["pos"])
     t = cand.get("target")
     if t:
         b = f_battle(c, t)
@@ -118,16 +138,48 @@ def featurize(rec, cand):
     return out
 
 # ---------- Data ----------
-def load(paths):
-    recs = []
+def records(path):
+    """Streams the decision records from a training file one at a time, so a file larger than memory still loads."""
+    dec, buf, pos = json.JSONDecoder(), "", 0
+    with open(path, encoding="utf-8") as f:
+        def more():
+            nonlocal buf, pos
+            chunk = f.read(1 << 24)
+            buf, pos = buf[pos:] + chunk, 0
+            return bool(chunk)
+        more()
+        start = buf.find('"records"')
+        if start < 0:  # a bare list of records
+            start = buf.find("[")
+        else:
+            start = buf.find("[", start)
+        if start < 0: return
+        pos = start + 1
+        while True:
+            while pos < len(buf) and buf[pos] in " \t\r\n,": pos += 1
+            if pos >= len(buf):
+                if not more(): return
+                continue
+            if buf[pos] == "]": return
+            try:
+                r, end = dec.raw_decode(buf, pos)
+            except json.JSONDecodeError:
+                if not more(): return
+                continue
+            pos = end
+            yield r
+
+def load(paths, vocab, temp=0.0, adv_scale=0.0):
+    """Reads every usable decision and encodes it straight away, keeping only what training needs."""
+    out = []
     for path in paths:
-        with open(path, encoding="utf-8") as f:
-            d = json.load(f)
-        rows = d["records"] if isinstance(d, dict) else d
-        for r in rows:
+        for r in records(path):
             if isinstance(r, dict) and r.get("cands") and isinstance(r.get("chosen"), int) and 0 <= r["chosen"] < len(r["cands"]):
-                recs.append(r)
-    return recs
+                if r.get("cvals") and len(r["cvals"]) != len(r["cands"]): r.pop("cvals")
+                out.append({"duel": r.get("duel"), "chosen": r["chosen"], "plays": tuple(sys.intern(c["play"]) for c in r["cands"]),
+                            "soft": bool(r.get("cvals")), "enc": encode([r], vocab, temp, adv_scale)[0]})
+                if len(out) % 50000 == 0: print(f"  read {len(out)} decisions", flush=True)
+    return out
 
 def split_by_duel(recs, share, seed):
     duels = sorted({r.get("duel") or "?" for r in recs})
@@ -137,8 +189,48 @@ def split_by_duel(recs, share, seed):
     return [r for r in recs if (r.get("duel") or "?") not in held], [r for r in recs if (r.get("duel") or "?") in held]
 
 # ---------- Model ----------
-def scores(w, feats):
-    return [sum(w.get(f, 0.0) for f in fs) for fs in feats]
+# Features are stored as integer ids, each decision as one flat array of ids with the offset where each candidate
+# starts, so hundreds of thousands of decisions fit in memory. Weights are a list indexed by id.
+class Vocab:
+    def __init__(self): self.ids, self.names = {}, []
+    def id(self, f):
+        i = self.ids.get(f)
+        if i is None: i = self.ids[f] = len(self.names); self.names.append(f)
+        return i
+
+def targets(r, temp, adv_scale):
+    """The training target for one decision: a probability per candidate, the decision's weight, and which
+    candidates count as right (the teacher's best, or every play within 0.01 of its best value)."""
+    n, y = len(r["cands"]), r["chosen"]
+    vals = r.get("cvals")
+    if not vals or not temp or sum(v is not None for v in vals) < 2:
+        q = [0.0] * n; q[y] = 1.0
+        return q, 1.0, {y}
+    known = [(v, j) for j, v in enumerate(vals) if v is not None]
+    best = max(v for v, _ in known)
+    ok = {j for v, j in known if v >= best - 0.01} | {y}
+    e = {j: math.exp((v - best) / temp) for v, j in known}
+    z = sum(e.values())
+    q = [e.get(j, 0.0) / z for j in range(n)]
+    # The gap to the best play that scored differently; a gap of 0 means the teacher saw nothing to choose between.
+    lower = [v for v, _ in known if v < best - 1e-9]
+    gap = best - max(lower) if lower else 0.0
+    weight = min(1.0, 0.1 + gap / adv_scale) if adv_scale else 1.0
+    return q, weight, ok
+
+def encode(recs, vocab, temp=0.0, adv_scale=0.0):
+    out = []
+    for r in recs:
+        flat, offs = array("I"), [0]
+        for c in r["cands"]:
+            flat.extend(vocab.id(f) for f in featurize(r, c)); offs.append(len(flat))
+        q, weight, ok = targets(r, temp, adv_scale)
+        out.append((flat, tuple(offs), r["chosen"], array("f", q), weight, frozenset(ok)))
+    return out
+
+def scores(w, d):
+    flat, offs = d[0], d[1]
+    return [sum(w[i] for i in flat[offs[j]:offs[j + 1]]) for j in range(len(offs) - 1)]
 
 def softmax(xs):
     m = max(xs)
@@ -149,58 +241,59 @@ def softmax(xs):
 def evaluate(w, data):
     if not data:
         return {"n": 0}
-    top1 = top3 = 0
+    top1 = top3 = near = 0
     ll = 0.0
-    for feats, y in data:
-        s = scores(w, feats)
+    for d in data:
+        s, y, ok = scores(w, d), d[2], d[5]
         order = sorted(range(len(s)), key=lambda i: -s[i])
         top1 += order[0] == y
         top3 += y in order[:3]
+        near += order[0] in ok
         ll += math.log(max(softmax(s)[y], 1e-12))
     n = len(data)
-    return {"n": n, "top1": top1 / n, "top3": top3 / n, "loglik": ll / n}
+    return {"n": n, "top1": top1 / n, "top3": top3 / n, "near": near / n, "loglik": ll / n}
 
-def train(data, dev, epochs, lr, l2, seed):
-    w = defaultdict(float)
-    g2 = defaultdict(float)
+def train(data, dev, size, epochs, lr, l2, seed):
+    w, g2 = [0.0] * size, [0.0] * size
     rnd = random.Random(seed)
-    best, best_w, since = None, None, 0
+    best, best_w, best_ep, since = None, None, 0, 0
     order = list(range(len(data)))
     for ep in range(1, epochs + 1):
         rnd.shuffle(order)
         for i in order:
-            feats, y = data[i]
-            p = softmax(scores(w, feats))
+            d = data[i]; flat, offs, q, weight = d[0], d[1], d[3], d[4]
+            p = softmax(scores(w, d))
             grad = defaultdict(float)
-            for j, fs in enumerate(feats):
-                g = p[j] - (1.0 if j == y else 0.0)
-                if g:
-                    for f in fs:
+            for j in range(len(offs) - 1):
+                g = (p[j] - q[j]) * weight
+                if g > 1e-6 or g < -1e-6:
+                    for f in flat[offs[j]:offs[j + 1]]:
                         grad[f] += g
             for f, g in grad.items():
                 g += l2 * w[f]
                 g2[f] += g * g
                 w[f] -= lr * g / (math.sqrt(g2[f]) + 1e-8)
         m = evaluate(w, dev) if dev else evaluate(w, data)
-        print(f"  epoch {ep:3d}: {'held-out' if dev else 'training'} top-1 {m['top1']:.3f}, log-likelihood {m['loglik']:.3f}")
-        if best is None or m["loglik"] > best + 1e-4:
-            best, best_w, since = m["loglik"], dict(w), 0
+        print(f"  epoch {ep:3d}: {'held-out' if dev else 'training'} top-1 {m['top1']:.3f}, near-best {m['near']:.3f}, log-likelihood {m['loglik']:.3f}", flush=True)
+        # Keeps the epoch whose picks were most often among the teacher's best (the exact pick, without teacher values).
+        if best is None or m["near"] > best + 1e-4:
+            best, best_w, best_ep, since = m["near"], list(w), ep, 0
         else:
             since += 1
             if since >= 4:
                 print("  stopping early: no improvement for 4 epochs")
                 break
-    return best_w
+    return best_w, best_ep
 
 def baselines(train_data, test_recs):
     # Most common kind of play: how often the chosen play type wins among the types offered.
     chosen_types = Counter()
     for r in train_data:
-        chosen_types[r["cands"][r["chosen"]]["play"]] += 1
-    rand = sum(1 / len(r["cands"]) for r in test_recs) / max(1, len(test_recs))
+        chosen_types[r["plays"][r["chosen"]]] += 1
+    rand = sum(1 / len(r["plays"]) for r in test_recs) / max(1, len(test_recs))
     hits = 0
     for r in test_recs:
-        best = max(range(len(r["cands"])), key=lambda i: chosen_types[r["cands"][i]["play"]])
+        best = max(range(len(r["plays"])), key=lambda i: chosen_types[r["plays"][i]])
         hits += best == r["chosen"]
     return rand, hits / max(1, len(test_recs))
 
@@ -213,28 +306,33 @@ def main():
     ap.add_argument("--l2", type=float, default=1e-4)
     ap.add_argument("--holdout", type=float, default=0.2, help="share of duels kept back for testing")
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--soft-temp", type=float, default=0.0, help="temperature for soft targets from teacher values (try 0.05); 0, the default, trains on the chosen play only")
+    ap.add_argument("--adv-scale", type=float, default=0.0, help="a decision counts in full once its best play beats the next by this much (try 0.1); 0, the default, weights all alike")
     a = ap.parse_args()
 
-    recs = load(a.data)
+    vocab = Vocab()
+    recs = load(a.data, vocab, a.soft_temp, a.adv_scale)
     if not recs:
         sys.exit("No usable decisions in those files. Record some plays first.")
     duels = len({r.get("duel") for r in recs})
-    print(f"{len(recs)} decisions from {duels} duels, {sum(len(r['cands']) for r in recs) / len(recs):.1f} plays to choose from on average")
+    soft = sum(r["soft"] for r in recs)
+    print(f"{len(recs)} decisions from {duels} duels, {sum(len(r['plays']) for r in recs) / len(recs):.1f} plays to choose from on average"
+          + (f"; {soft} carry teacher values" if soft else ""))
     tr, te = split_by_duel(recs, a.holdout, a.seed)
     if not te:
         print("Only one duel recorded, so there's nothing to test on. Record more duels for a real score.")
-    enc = lambda rs: [([featurize(r, c) for c in r["cands"]], r["chosen"]) for r in rs]
-    tr_d, te_d = enc(tr), enc(te)
+    tr_d, te_d = [r["enc"] for r in tr], [r["enc"] for r in te]
     print(f"Training on {len(tr)} decisions, testing on {len(te)} from duels it never sees.")
-    w = train(tr_d, te_d, a.epochs, a.lr, a.l2, a.seed)
+    w, best_ep = train(tr_d, te_d, len(vocab.names), a.epochs, a.lr, a.l2, a.seed)
     m = evaluate(w, te_d) if te_d else evaluate(w, tr_d)
     if te:
         rand, common = baselines(tr, te)
-        print(f"\nOn held-out duels: picks your play {m['top1']:.1%} of the time, and has it in its top 3 {m['top3']:.1%} of the time.")
+        print(f"\nOn held-out duels: picks your play {m['top1']:.1%} of the time, one of the teacher's best {m['near']:.1%}, and has it in its top 3 {m['top3']:.1%} of the time.")
         print(f"For comparison: picking at random gets {rand:.1%}, and picking the most common kind of play gets {common:.1%}.")
-    # Refit on everything, for as many epochs as worked, before exporting.
-    print("\nRefitting on all decisions for the final model...")
-    w = train(enc(recs), [], a.epochs, a.lr, a.l2, a.seed)
+    # Refit on everything, for as many epochs as worked best on the held-out duels, before exporting.
+    print(f"\nRefitting on all decisions for {best_ep} epochs for the final model...")
+    w, _ = train(tr_d + te_d, [], len(vocab.names), best_ep, a.lr, a.l2, a.seed)
+    w = dict(zip(vocab.names, w))
     weights = {f: round(v, 4) for f, v in w.items() if abs(v) >= 1e-3}
     model = {"kind": "ygo-duel-odds-policy", "featuresVersion": FEATURES_VERSION, "trained": time.strftime("%Y-%m-%d %H:%M"),
              "decisions": len(recs), "duels": duels, "heldOut": m if te else None, "weights": weights}

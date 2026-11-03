@@ -26,6 +26,17 @@ FIXTURES = [
      "me": {"lp": None, "hand": [], "mon": [], "st": []}, "opp": {"lp": "?", "hand": None, "mon": [], "st": []},
      "cands": [{"key": "card|5|Activate", "play": "Activate", "card": {"name": "Black Luster Soldier - Envoy of the Beginning", "ctype": "Monster", "zone": "hand", "atk": "?", "def": None, "level": 8}, "target": {"pos": "ATK", "atk": None}}], "chosen": 0},
     {"cands": [{"key": "global|Enter BP", "play": "Enter BP"}], "chosen": 0},
+    # Lethal on board, a card held twice, a face-down candidate, and a candidate not in the hand.
+    {"phase": "M1", "myTurn": True, "turn": 1, "playsThisTurn": 0,
+     "me": {"lp": 2000, "hand": [{"name": "Scapegoat"}, {"name": "Scapegoat"}, {"name": "Metamorphosis"}, {}], "mon": [mon("Jinzo", 2400, 1500, lvl=6), mon("Sangan", 1000, 600, pos="DEF"), {"pos": "FD"}], "st": [{"name": "Scapegoat", "pos": "FD"}]},
+     "opp": {"lp": 2400, "hand": 0, "mon": [], "st": []},
+     "cands": [
+         {"key": "card|1|Set ST", "play": "Set ST", "card": {"name": "Scapegoat", "ctype": "Spell", "zone": "hand"}},
+         {"key": "card|2|Activate", "play": "Activate", "card": {"name": "Metamorphosis", "ctype": "Spell", "zone": "hand"}},
+         {"key": "card|3|Flip Summon", "play": "Flip Summon", "card": {"ctype": "Monster", "zone": "monster", "pos": "FD"}},
+         {"key": "card|4|To ATK", "play": "To ATK", "card": mon("Sangan", 1000, 600, pos="DEF")},
+         {"key": "global|Enter BP", "play": "Enter BP"},
+     ], "chosen": 4},
 ]
 
 def js_features():

@@ -195,26 +195,34 @@ It takes a few seconds to a few minutes. When it finishes, it tells you how ofte
 
 **4. Load it.** Under **Learning**, press **Load a trained model** and pick `policy.json`. Then choose **Learned model** under **What it should do**, start a Solo Mode duel, and press **Start**.
 
-**No recordings yet?** Load the ready-made starter model, `models/goat-starter.json`, from the [full project download](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip). It was trained on 500 simulated games, and in 300 test games against the scripted player it won 107 and lost 152, with 41 reaching the turn limit. Or train your own from simulated games. `tools/sim_goat.py` deals games between four standard Goat decks:
+**No recordings yet?** Load the ready-made starter model, `models/goat-starter.json`, from the [full project download](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip). It was trained on simulated games between real tournament decks, taught by a player that looks ahead (see below). In 1,000 test games against the scripted player it won 51% and lost 46%, with 3% reaching the turn limit. Against the look-ahead teacher that taught it, it won 41%.
 
-- Chaos Control, from flosel74's winning list at the 2026 World Championship
-- Gumo Warrior, from Ez2Slayu's 2nd-place list
-- Warrior, from Leuh's top 4 list
-- Chaos Turbo, from Joker88's list that won Last Chance Qualifier 3 2026
+Or train your own from simulated games. `tools/sim_goat.py` deals games between Goat decks and writes every decision as training data. By default it uses four standard lists in `tools/decks/` (Chaos Control, Gumo Warrior, Warrior and Chaos Turbo from the 2026 World Championship season). With `--fl 400` it deals from the 400 most recent decks that placed in tournaments on Format Library instead, which `tools/train_decks.py` downloads.
 
-A scripted player plays them using common rules of thumb, and the model learns those habits:
+Two players can make the plays:
 
-```
-python3 tools/sim_goat.py --games 500 -o sim-training.json
-python3 tools/train_policy.py sim-training.json
-```
-
-It plays sensibly but simply, because it can only learn what the script does. A model trained on your own duels will play more like you. You can also train on both files at once.
-
-To see how a model plays, rather than how often it copies, test it against the scripted player:
+- The **scripted player** (default) uses common rules of thumb. It's fast, and a model trained on it learns those habits.
+- The **look-ahead teacher** (`--teacher rollout`) tries each legal play in copies of the game, with the cards it can't see dealt again at random each time, plays each copy on for a few turns with the scripted player, and keeps the play that does best. It wins about 60% of games against the scripted player. It's slower: about 130 games a minute on 8 cores. It also records the value it found for each play (`cvals`), which the trainer can use as soft targets (`--soft-temp`); that's off by default because it made models play more passively.
 
 ```
-python3 tools/sim_goat.py --eval --games 300 --model policy.json
+python3 tools/sim_goat.py --fl 400 --teacher rollout --games 1000 -o teacher.json
+python3 tools/train_policy.py teacher.json -o policy.json
+```
+
+A model only ever sees the positions its teacher gets into, so once you have a model, let it make the plays while the teacher labels them, and train on both files. The model then learns what to do in the spots it gets itself into:
+
+```
+python3 tools/sim_goat.py --fl 400 --teacher rollout --actor policy.json --epsilon 0.1 --games 600 -o dagger.json
+python3 tools/train_policy.py teacher.json dagger.json -o policy.json
+```
+
+A model trained on your own duels will play more like you. You can train on recorded duels and simulated games together.
+
+To see how a model plays, rather than how often it copies, test it against the scripted player, the teacher, or another model:
+
+```
+python3 tools/sim_goat.py --fl 400 --eval --games 500 --model policy.json
+python3 tools/sim_goat.py --fl 400 --eval --games 500 --model policy.json --opponent old-policy.json
 ```
 
 Some safety rules always apply when it plays:
@@ -318,7 +326,7 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
 | `tools/test_features.py` | Checks that the Python and JavaScript copies of the model's features match. |
 | `tools/sim_goat.py` | A simplified Goat simulator that writes training decisions from a scripted player, and tests a trained model against that player. |
 | `tools/decks/` | The four standard decklists the simulator uses. Add more `.txt` lists in the same format and it uses them too. |
-| `models/goat-starter.json` | A model trained on simulated games with those decks, ready to load in the Auto tab. |
+| `models/goat-starter.json` | A model trained on 3,200 simulated games between Format Library topping decks, labelled by the look-ahead teacher (a quarter of them with an earlier model making the plays), ready to load in the Auto tab. |
 
 ### How the extension works
 
@@ -347,14 +355,16 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
     - which candidate you chose
 
     `tracker.js` stores the records in chunks, capped at 40,000.
-  - `features.js` turns a record into features for each candidate: the play type crossed with the phase, zone, card name, hand size, board counts and life points, plus battle outcome for attacks. `tools/train_policy.py` has a line-for-line Python copy, and `tools/test_features.py` checks the two agree using macOS's JavaScript engine. Records keep the raw situation rather than features, so the features can change without re-recording. Bump `FEATURES_VERSION` in both when they do.
-  - `train_policy.py` fits a linear softmax ranker over each decision's candidates with AdaGrad and L2, holding out 20% of duels. It reports top-1 and top-3 accuracy against random and most-common-play baselines, then refits on everything and exports the weights. No packages are needed.
-  - `tools/sim_goat.py` simulates games with the lists in `tools/decks/`:
-    - It models turns, tributes, battle and the effects of the cards in those decks, simplified.
+  - `features.js` turns a record into features for each candidate: the play type crossed with the phase, zone, card name, hand size, board counts and life points, whether the attackers on board could finish them, plus battle outcome for attacks. `tools/train_policy.py` has a line-for-line Python copy, and `tools/test_features.py` checks the two agree using macOS's JavaScript engine. Records keep the raw situation rather than features, so the features can change without re-recording. Bump `FEATURES_VERSION` in both when they do.
+  - `train_policy.py` fits a linear softmax ranker over each decision's candidates with AdaGrad and L2, holding out 20% of duels. It streams the data file, so it can train on millions of decisions in a few hundred MB. Decisions that carry the teacher's value for each play (`cvals`) can be trained as soft targets, weighted by how clearly the best play won (`--soft-temp`, `--adv-scale`; both off by default, since they made models more passive). It reports top-1 and top-3 accuracy against random and most-common-play baselines, and on teacher data how often its pick was among the teacher's best, then refits on everything and exports the weights. No packages are needed.
+  - `tools/sim_goat.py` simulates games with the lists in `tools/decks/`, or with `--fl N` the N most recent Format Library topping decks:
+    - It models turns, tributes, battle and the effects of about a hundred of the most-played Goat cards, simplified. Cards it doesn't know play as vanilla.
     - It handles DuelingBook's manual follow-ups, like the two draws after Pot of Greed and the discards after Graceful Charity.
     - The defending player's traps follow fixed habits.
     - The scripted player's decisions are written as records, with candidates named as DuelingBook's menus name them.
-    - `--model policy.json --eval` plays the trained model against the scripted player, using the same guards as the extension, and reports the win rate.
+    - `--teacher rollout` makes the recorded plays with a look-ahead player: each legal play is tried in copies of the game with the hidden cards redealt, played on for `--horizon` turns by the scripted player, and scored by a fixed position value. The value it found for each play is recorded as `cvals`.
+    - `--actor policy.json` has a model make the plays while the teacher labels them (DAgger), with `--epsilon` random plays mixed in.
+    - `--model policy.json --eval` plays the trained model against the scripted player (or `--opponent rollout`, or another policy.json), using the same guards as the extension, and reports the win rate. Runs use all cores (`--jobs`).
 
     It's a rough model of the game, not a rules engine: chains are one link deep, and effects outside those decks do nothing.
   - `autoplay.js` runs the loop in the panel. A strategy is an entry in `STRATEGIES` with a `decide(state)` function that returns an action or `null`. The comment at the top of the file lists what `state` holds and what an action looks like.
