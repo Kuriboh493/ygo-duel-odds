@@ -12,6 +12,16 @@ Then follow the [install steps](#install-it-about-5-minutes) below. It takes abo
 
 It only uses what both players can see on screen. It never peeks at your opponent's hidden cards. Some tournaments don't allow helper tools, so check the rules before using it in an event.
 
+It can also **play for you**. Flip the **AI takes over** switch in the **Auto** tab and a model trained on real decks, or on your own duels, makes the plays: in Solo Mode, or in labeled bot duels against people who chose to play a bot. It never plays for you against someone who thinks they're playing you.
+
+**Turn on the AI in 3 steps:**
+
+1. [Install the extension](#install-it-about-5-minutes) and open the panel on DuelingBook.
+2. In the **Auto** tab, under **Learning**, press **Load a trained model** and pick `models/goat-starter.json` from the [full project download](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip).
+3. Start a Solo Mode duel and flip **AI takes over** to On. To have it play people, set up [bot duels](#bot-account-playing-people-who-choose-to-play-a-bot) first.
+
+Flip it off, or press **Stop**, to take control back. [More about the switch](#the-ai-takes-over-switch).
+
 - [Install it (about 5 minutes)](#install-it-about-5-minutes)
 - [Use it](#use-it)
 - [Turning it on partway through a duel](#turning-it-on-partway-through-a-duel)
