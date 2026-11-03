@@ -12,7 +12,7 @@ Then follow the [install steps](#install-it-about-5-minutes) below. It takes abo
 
 It only uses what both players can see on screen. It never peeks at your opponent's hidden cards. Some tournaments don't allow helper tools, so check the rules before using it in an event.
 
-It can also **play for you**. Flip the **AI takes over** switch in the **Auto** tab and a model trained on real decks, or on your own duels, makes the plays: in Solo Mode, or in labeled bot duels against people who chose to play a bot. It never plays for you against someone who thinks they're playing you.
+It can also **play for you**. Flip the **AI takes over** switch in the **Auto** tab and a model trained on real decks, or on your own duels, makes the plays: in Solo Mode, in labeled bot duels, or in any unrated duel where the opponent types **yes** when it asks if they'll play your AI. It never plays for you against someone who thinks they're playing you.
 
 **Turn on the AI in 3 steps:**
 
@@ -28,6 +28,7 @@ Flip it off, or press **Stop**, to take control back. [More about the switch](#t
 - [Auto-play](#auto-play)
   - [The "AI takes over" switch](#the-ai-takes-over-switch)
   - [Playing on your own account](#playing-on-your-own-account)
+  - [Asking in any duel](#asking-in-any-duel)
   - [Pace and DuelingBook's slow-play rules](#pace-and-duelingbooks-slow-play-rules)
 - [Bot account: playing people who choose to play a bot](#bot-account-playing-people-who-choose-to-play-a-bot)
 - [Something not working?](#something-not-working)
@@ -180,7 +181,8 @@ The **Auto** tab can make plays on DuelingBook for you: draw, summon, set, activ
 | A **Solo Mode** duel, where you play both sides yourself | Yes. |
 | A **bot account** (its name contains "bot"), against someone who joined its labeled, unrated bot duel | Yes, once you've set it up. See [Bot account](#bot-account-playing-people-who-choose-to-play-a-bot). |
 | **Your own account**, against someone who joined its labeled, unrated bot duel | Yes, if you choose **My own account** under **Bot account**. See [Playing on your own account](#playing-on-your-own-account). |
-| **Your own account** in any other duel: pool duels, rated or unrated, challenges, tournaments, duels you host yourself | **No, never.** It's locked and refuses every play, because that opponent thinks they're playing you. |
+| **Your own account** in any other unrated duel: pool duels, challenges, duels you host yourself | Only if you tick **Ask opponents in my other unrated duels too**, and the opponent types **yes** when it asks in chat. See [Asking in any duel](#asking-in-any-duel). |
+| A **rated** duel, or any duel where the opponent hasn't agreed | **No, never.** It's locked and refuses every play, because that opponent thinks they're playing you. |
 | Watching someone else's duel | No. |
 
 The DuelingBook page itself enforces the lock, not just the panel, so no setting in the panel can get around it.
@@ -301,14 +303,30 @@ These always apply, whether you use the switch or **Start**:
 
 You can let the AI play on your own account, but only in labeled bot duels. Choose **My own account** under **Bot account**, tick its two confirmations, and flip the switch. It then works exactly like a bot account: it hosts unrated duels titled as bot duels, only plays people who join one, and tells them in chat before its first play: "Hi! I'm a bot: a computer program trained to play this format, playing on its owner's account, as this duel's title says."
 
-It still never plays anyone who didn't join its bot duel. That includes pool duels, challenges, and duels you host yourself under your own title. Those opponents think they're playing you, and secretly playing them with a program would take away their choice about whether to play a bot.
+It never plays anyone who hasn't agreed to play a bot. In pool duels, challenges and duels you host yourself, the opponent thinks they're playing you, so it only plays them if it has asked and they've said yes. See [Asking in any duel](#asking-in-any-duel).
 
 Two things to know before you use it:
 
 - **Your name doesn't say it's a bot.** Opponents only find out from the duel's title and the chat message. Saying so in your profile while it runs helps.
 - **It's your main account at risk.** [DuelingBook's rules](https://www.duelingbook.com/rules) don't mention bots either way, but staff "reserve the right to ban or suspend accounts at our discretion with or without warning", and you're responsible for everything done on your account. If they decide they don't like it, the account banned is the one with your rating and history. A separate bot account keeps that risk off your main one.
 
-To play yourself again, flip the switch off. Any duel you host afterwards is yours: the bot never accepts joiners into a duel that isn't titled as a bot duel.
+To play yourself again, flip the switch off. With asking off, any duel you host afterwards is yours: the bot never accepts joiners into a duel that isn't titled as a bot duel.
+
+### Asking in any duel
+
+Tick **Ask opponents in my other unrated duels too** under **Bot account**, and keep the **AI takes over** switch on. Then play as you normally would: join the pool, send or accept challenges, or host your own duels. When an unrated duel starts, the bot asks in chat:
+
+> Heads up: my owner would like their AI, a computer program, to play this duel for them. Type yes to play the bot, or no to play them instead.
+
+- **They type yes** (or "y", "yeah", "yep", "sure", "ok"): it thanks them, reminds them it's a bot, and plays the duel. If they answer during rock-paper-scissors, it handles that too.
+- **They type no:** it replies "No problem! My owner will play this duel themselves." The panel shows a message and adds it to **What it did**, and you play the duel.
+- **They don't answer:** it never plays. The panel shows "Asked the opponent in chat. Waiting for them to type yes.", so play the duel yourself.
+- **They change their mind:** if they type no after saying yes, it stops straight away and hands the duel back to you, mid-turn if need be. Keep an eye on the duel.
+- **Rated duels:** it never asks, and never plays them.
+
+An answer only counts for that duel or match. Next time you meet the same person, it asks again. Only the opponent's own chat messages count, not yours or a watcher's.
+
+On your own account with asking on, the switch doesn't open the Duel Room or host by itself, since you pick the duels. You can still host labeled bot duels with **Host a bot duel**, or tick **Host again after each duel**.
 
 ### Pace and DuelingBook's slow-play rules
 
@@ -458,7 +476,7 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
     - The opponent joined a duel the bot hosted under its label. `joinDuelResponse` is wrapped to accept joiners and record them, and only while the Host form's note is still the bot label.
     - The bot's announcement has been sent for this game.
 
-    In bot duels it only plays its own cards on its own turn. `botWait` refuses plays with `wait: true` (which the panel retries quietly) inside 1.5 s of its last play, 3 s after a play that isn't in `QUIET_PLAYS`, and 3 s after any opponent play. `botPace` ends a stuck turn after 60 s and admits defeat through the client's `admitDefeat` after 90 s more, or once the panel's heartbeat (`moves` with `beat`) has been missing 20 s; the panel also sends `botForfeit` when it stops mid-duel. A `Call admin` event posts a note for the judge. The hook also answers rock-paper-scissors, picks first and confirms side decking, all through the client's own `chooseRPS`, `pickFirst`, `doneSiding` and `hostDuel`.
+    In bot duels it only plays its own cards on its own turn. `botWait` refuses plays with `wait: true` (which the panel retries quietly) inside 1.5 s of its last play, 3 s after a play that isn't in `QUIET_PLAYS`, and 3 s after any opponent play. `botPace` ends a stuck turn after 60 s and admits defeat through the client's `admitDefeat` after 90 s more, or once the panel's heartbeat (`moves` with `beat`) has been missing 20 s; the panel also sends `botForfeit` when it stops mid-duel. A `Call admin` event posts a note for the judge. With `bot.ask`, `botTick` posts `BOT_ASK` once in any other unrated duel and `botChat` reads the opponent's `Duel message` replies into `chatYes`/`chatNo`; `agreed()` accepts either a labeled-duel joiner or a yes, and every agreement is cleared when the client leaves the duel. The hook also answers rock-paper-scissors, picks first and confirms side decking, all through the client's own `chooseRPS`, `pickFirst`, `doneSiding` and `hostDuel`.
   - When recording is on, `page-hook.js` builds a decision record just before the client applies each of your plays. The record holds:
     - your cards with names and stats
     - the opponent's public cards, plus counts of their hidden ones

@@ -15,7 +15,7 @@
     if (d.kind === "side"){ sideOverride = d.data || "auto"; lastSig = ""; }
     if (d.kind === "pause"){ paused = !!d.data; lastSig = ""; }
     if (d.kind === "record") recording = !!d.data;
-    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.own = !!(d.data && d.data.own); bot.fun = !(d.data && d.data.fun === false); bot.keepHosting = !!(d.data && d.data.keepHosting); bot.auto = !!(d.data && d.data.auto); if (d.data && d.data.format) bot.format = d.data.format; }
+    if (d.kind === "bot"){ bot.on = !!(d.data && d.data.on); bot.own = !!(d.data && d.data.own); bot.fun = !(d.data && d.data.fun === false); bot.ask = !!(d.data && d.data.ask); bot.keepHosting = !!(d.data && d.data.keepHosting); bot.auto = !!(d.data && d.data.auto); if (d.data && d.data.format) bot.format = d.data.format; }
     if (d.kind === "history") post("history", history());
     if (d.kind === "ping") post("pong", true);
     if (d.kind === "exec"){
@@ -186,13 +186,23 @@
     "Power cell critical. Admitting defeat rather than leave you waiting. Thanks for the game, human!",
     "My operator has recalled me to the future, so I admit defeat rather than leave you waiting. Thanks for the game!",
   ];
+  // Asking in any other unrated duel: it only plays once the opponent types yes, and stops if they say no.
+  const BOT_ASK = "Heads up: my owner would like their AI, a computer program, to play this duel for them. Type yes to play the bot, or no to play them instead.";
+  const BOT_ASK_YES = "Thanks! You're now playing a bot: a computer program, run by its owner. Type no at any time to play its owner instead. Good luck, have fun!";
+  const BOT_ASK_NO = "No problem! My owner will play this duel themselves.";
+  const SAID_YES = /^\s*(yes|y|yeah|yep|sure|ok|okay)\b/i, SAID_NO = /^\s*(no|n|nope|nah)\b/i;
   const pick = a => a[Math.floor(Math.random() * a.length)].replace("{fmt}", bot.format === "edison" ? "Edison format" : "Goat format");
   // own: its owner's own account, chosen in the panel. Everything else about bot duels is the same.
-  const bot = {on: false, own: false, fun: true, keepHosting: false, auto: false, paused: false, hosted: false, consented: new Set(), announced: new Set(), lastLabel: "", acts: {},
+  // consented: joined its labeled duel. chatYes / chatNo / asked: answers to BOT_ASK. All four only last for the duel or match
+  // they were given in, and are cleared when the client leaves the duel.
+  const bot = {on: false, own: false, fun: true, ask: false, keepHosting: false, auto: false, paused: false, hosted: false, consented: new Set(), announced: new Set(),
+               chatYes: new Set(), chatNo: new Set(), asked: new Set(), lastLabel: "", acts: {},
                oppAt: 0, mineAt: 0, waitAfterMine: 0, beat: 0, duelAt: 0, turnKey: "", turnAt: 0, forfeited: new Set()};
   const isBotAccount = () => /bot/i.test(G.me() || "");
   // An account that may host bot duels: one whose name says it's a bot, or its owner's own account in own-account mode.
   const accountOk = () => isBotAccount() || bot.own;
+  // The opponent agreed to play the bot: by joining its labeled duel, or by typing yes when asked.
+  const agreed = who => bot.consented.has(who) || bot.chatYes.has(who);
   const duelKey = () => { const sd = sides(); return `${G.duelId()}|${sd ? sd.opp.username : ""}|${typeof games !== "undefined" ? games : ""}`; };
   function botLock(){
     const sd = sides();
@@ -200,7 +210,13 @@
     if (!accountOk()) return "The logged-in account's name has to say it's a bot (contain \"bot\"), or choose your own account under Bot account.";
     if (!sd || sd.spectating) return "Not in a duel.";
     if (typeof rated === "undefined" || rated !== false) return "Bot account mode only plays unrated duels.";
-    if (!bot.consented.has(sd.opp.username)) return "This opponent didn't join the bot's labeled duel, so it won't play them.";
+    const opp = sd.opp.username;
+    if (!agreed(opp)){
+      if (!bot.ask) return "This opponent didn't join the bot's labeled duel, so it won't play them.";
+      if (bot.chatNo.has(opp)) return "The opponent said no, so you're playing this duel yourself.";
+      if (bot.asked.has(opp)) return "Asked the opponent in chat. Waiting for them to type yes.";
+      return "About to ask the opponent in chat whether they'll play the bot.";
+    }
     if (!bot.announced.has(duelKey())) return "Waiting to tell the opponent in chat that they're playing a bot.";
     return null;
   }
@@ -232,10 +248,17 @@
     if (!bot.on || !accountOk()) return;
     botPace();
     const label = G.label(), me = G.me();
-    if (label !== bot.lastLabel){ bot.lastLabel = label; bot.acts = {}; bot.enteredAt = Date.now(); }
+    if (label !== bot.lastLabel){
+      // Leaving a duel ends every agreement made in it, so a later duel against the same person starts over.
+      if (DUEL_LABELS.has(bot.lastLabel) && !DUEL_LABELS.has(label)) for (const k of ["consented", "chatYes", "chatNo", "asked"]) bot[k].clear();
+      bot.lastLabel = label; bot.acts = {}; bot.enteredAt = Date.now();
+    }
     const waited = Date.now() - (bot.enteredAt || 0) > 1500;
     if (!waited) return;
-    const sd = sides(), consented = sd && bot.consented.has(sd.opp.username);
+    const sd = sides(), consented = sd && agreed(sd.opp.username);
+    // In any other unrated duel, it asks once, as soon as the duel begins.
+    if (bot.ask && sd && !sd.spectating && DUEL_LABELS.has(label) && rated === false && !consented && !bot.asked.has(sd.opp.username) && !isSolo())
+      once("ask", () => { bot.asked.add(sd.opp.username); duelChat(BOT_ASK); post("error", "Bot: asked " + sd.opp.username + " in chat whether they'll play the bot."); });
     // A tie resets the pick, so it picks again whenever the client is waiting for one.
     if (label === "rps_start" && consented && typeof pickedRPS !== "undefined" && !pickedRPS && typeof chooseRPS === "function" && Date.now() - (bot.lastRps || 0) > 3000){
       bot.lastRps = Date.now(); bot.dueled = true;
@@ -252,8 +275,10 @@
       once("rehost", () => { bot.dueled = false; botHost(bot.format); });
     // Taking over on login: from the main menu it opens the Duel Room, and hosts its first duel there.
     // Each happens once per visit, so cancelling the hosting or leaving the room by hand isn't undone.
-    if (bot.auto && !bot.paused && label === "main_menu" && typeof gotoDuelRoom === "function") once("room", () => gotoDuelRoom());
-    if (bot.auto && !bot.paused && label === "duel_room" && !bot.hosted && !(typeof hosting !== "undefined" && hosting))
+    // On its owner's own account with asking on, the owner picks the duels, so it doesn't head for the Duel Room by itself.
+    const autoHost = bot.auto && !bot.paused && !(bot.ask && bot.own && !isBotAccount());
+    if (autoHost && label === "main_menu" && typeof gotoDuelRoom === "function") once("room", () => gotoDuelRoom());
+    if (autoHost && label === "duel_room" && !bot.hosted && !(typeof hosting !== "undefined" && hosting))
       once("autohost", () => { const r = botHost(bot.format); if (!r.ok) post("error", "Bot: " + r.reason); });
   }
   // ---------- Pace in bot duels ----------
@@ -269,9 +294,26 @@
   const QUIET_PLAYS = /^(Draw card|Enter (DP|SP|M1|M2|EP)|Set |To ATK|To DEF|Duel message|Typing|Stop typing)/;
   const inBotDuel = () => {
     const sd = sides();
-    return !isSolo() && bot.on && accountOk() && !!sd && !sd.spectating && /^duel_start/.test(G.label()) && bot.consented.has(sd.opp.username);
+    return !isSolo() && bot.on && accountOk() && !!sd && !sd.spectating && /^duel_start/.test(G.label()) && agreed(sd.opp.username);
   };
+  // The opponent's answer to BOT_ASK. A no after a yes hands the duel back to the owner.
+  function botChat(d){
+    const sd = sides();
+    if (!bot.ask || !bot.on || !accountOk() || !sd || sd.spectating || d.play !== "Duel message" || d.username !== sd.opp.username) return;
+    const who = sd.opp.username, msg = String(d.message || "");
+    if (!bot.asked.has(who) || bot.consented.has(who)) return;
+    if (SAID_YES.test(msg) && !bot.chatYes.has(who) && !bot.chatNo.has(who)){
+      bot.chatYes.add(who); bot.announced.add(duelKey());
+      duelChat(bot.fun ? BOT_ASK_YES.replace(" Good luck, have fun!", " " + pick(FUN_HELLO)) : BOT_ASK_YES);
+      post("error", "Bot: " + who + " agreed to play the bot.");
+    } else if (SAID_NO.test(msg) && !bot.chatNo.has(who)){
+      const was = bot.chatYes.delete(who); bot.chatNo.add(who);
+      duelChat(BOT_ASK_NO);
+      post("error", "Bot: " + who + (was ? " changed their mind. You're playing this duel now." : " said no. You're playing this duel yourself."));
+    }
+  }
   function botSaw(d){
+    botChat(d);
     if (!inBotDuel()) return;
     const me = G.me(), play = String(d.play);
     if (d.username && d.username !== me && !/^(Duel message|Typing|Stop typing)/.test(play)) bot.oppAt = Date.now();

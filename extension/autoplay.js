@@ -123,6 +123,7 @@ async function apTick(){
   apBusy = true;
   try {
     const m = await Autoplay.moves(true); apLast = m; renderMoves(m);
+    apNoteAsk(m);
     // In bot account mode it waits between duels and while the opponent takes their turn. Otherwise it stops.
     if (!m || !m.allowed){ if (m && m.botOn) return; apStop("Stopped: auto-play only runs in a Solo Mode duel, or in bot account mode."); return; }
     if (m.mode === "bot" && !m.myTurn) return;
@@ -134,6 +135,15 @@ async function apTick(){
     apBusy = false;
     if (apRunning) apTimer = setTimeout(apTick, apSettings.delay);
   }
+}
+// Tells you when an asked opponent answers, since a no means it's your duel to play.
+let apAskLock = "";
+function apNoteAsk(m){
+  const lock = m && m.lock || "";
+  if (lock === apAskLock) return;
+  apAskLock = lock;
+  if (/said no/.test(lock)){ apLog(lock); toast("The opponent said no to the bot. You're playing this duel."); }
+  else if (/Waiting for them to type yes/.test(lock)) apLog(lock);
 }
 function apStart(){
   if (!apLast || !(apLast.allowed || apLast.botOn)) return toast("Open a Solo Mode duel, or turn on bot account mode, first.");
@@ -237,6 +247,7 @@ function aiSet(on, why){
 }
 async function takeoverTick(){
   if (!settings.botAuto || apBusy) return;
+  if (apRunning && apLast && apLast.botOn && /said no|type yes|About to ask/.test(apLast.lock || "")) return aiNote("ask|" + apLast.lock, apLast.lock);
   if (apRunning){ aiNote("run", apLast && apLast.mode === "bot" ? (apLast.isBotAccount ? "Playing on the bot account." : "Playing labeled bot duels on your account.") : "Playing this Solo Mode duel."); return; }
   if (!mlModel) return aiNote("model", "Waiting: load a trained model under Learning.");
   const m = await Autoplay.moves();
@@ -266,6 +277,7 @@ $("bot-on").addEventListener("change", () => {
   toast(settings.bot ? "Bot account mode is on. It only plays people who join its labeled, unrated duel." : "Bot account mode is off.");
 });
 $("bot-keep").addEventListener("change", () => { settings.botKeepHosting = $("bot-keep").checked; saveSettings(); });
+$("bot-ask").addEventListener("change", () => { settings.botAsk = $("bot-ask").checked; saveSettings(); toast(settings.botAsk ? "In your other unrated duels, it asks the opponent first, and plays only if they say yes." : "It only plays its own labeled bot duels."); });
 $("bot-fun").addEventListener("change", () => { settings.botFun = $("bot-fun").checked; saveSettings(); toast(settings.botFun ? "It'll add a joke to its chat messages. I'll be back." : "Chat messages are plain."); });
 $("bot-host").addEventListener("click", async () => {
   const r = await Autoplay.request({type:"botHost", format: settings.format});
@@ -276,7 +288,7 @@ api.storage.local.get(["settings"]).then(r => {
   const st = r.settings || {};
   settings.botKind = st.botKind;
   if (st.botAck) for (const c of botChecks()) c.checked = true;
-  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting; $("bot-fun").checked = st.botFun !== false;
+  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting; $("bot-fun").checked = st.botFun !== false; $("bot-ask").checked = !!st.botAsk;
   botSync(); aiSync();
 }).catch(() => {});
 
