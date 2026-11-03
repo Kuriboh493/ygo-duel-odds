@@ -383,6 +383,34 @@
     if (!solo_ && tp !== mine) return Object.assign(base, {cards, deck, globals: [], monsters: targets, turnSide, myTurn: false, record: null});
     return Object.assign(base, {cards, deck, globals: [...GLOBAL_PLAYS], monsters: targets, turnSide, myTurn: true, record: buildRecord(tp === p2 ? p2 : p1, turnSide)});
   }
+  // Clicks a menu item through the client's own cardMenuClicked, and finishes what a click would leave waiting:
+  //   with DuelingBook's "Choose zones" option on, a summon or set waits for you to click a zone, so it picks the first free one;
+  //   with card counts hidden, the client ignores menu clicks (it checks the graveyard count is on screen), so it's shown for the click.
+  // Returns whether the play actually reached DuelingBook's server, so a click that did nothing isn't reported as made.
+  const ZONE_SELECTS = ["#m1_select","#m2_select","#m3_select","#m4_select","#m5_select","#s1_select","#s2_select","#s3_select","#s4_select","#s5_select",
+                        "#field_spell1_select","#link_left_select","#link_right_select"];
+  function clickMenu(el, play){
+    const realSend = window.Send; let sent = 0;
+    window.Send = function(){ sent++; return realSend.apply(this, arguments); };
+    const count = typeof $ === "function" ? $("#cig1_txt") : null, hidden = count && count.length && !count.is(":visible");
+    try {
+      if (hidden) count.show();
+      cardMenuClicked(el, play);
+      if (!sent && typeof chooseZone === "function"){
+        const zone = ZONE_SELECTS.map(z => $(z)).find(z => z.length && z.is(":visible"));
+        if (zone) chooseZone.call(zone[0]);
+      }
+    } finally {
+      if (hidden) count.hide();
+      window.Send = realSend;
+    }
+    if (!sent){
+      // Whatever it opened (a zone choice, a menu) is closed again, so the board isn't left waiting.
+      try { if (typeof hideSelectZones === "function") hideSelectZones(); if (typeof removeCardMenu === "function") removeCardMenu("ygoOdds"); } catch (e){}
+      return {ok: false, reason: `DuelingBook didn't make "${play}". It may need a choice auto-play can't make yet.`};
+    }
+    return {ok: true};
+  }
   function findCard(id){
     const p1 = G.p1(), p2 = G.p2();
     return ownCards(p1, "player1").concat(ownCards(p2, "player2")).find(c => String(c.el.data("id")) === String(id)) || null;
@@ -494,8 +522,8 @@
     if (req.type === "deck"){
       const opts = captureMenu(() => showDeckMenu());
       if (!opts.includes(req.play)) return {ok: false, reason: `"${req.play}" isn't on the deck's menu right now.`};
-      lastExec = Date.now(); cardMenuClicked(list(p1.main_arr)[0], req.play);
-      return {ok: true};
+      lastExec = Date.now();
+      return clickMenu(list(p1.main_arr)[0], req.play);
     }
     if (req.type === "card"){
       const c = findCard(req.card);
@@ -511,8 +539,7 @@
         Send({action: "Duel", play: "Attack", attacking_card: c.el.data("id"), attacked_card: t.el.data("id")});
         return {ok: true};
       }
-      cardMenuClicked(c.el, req.play);
-      return {ok: true};
+      return clickMenu(c.el, req.play);
     }
     return {ok: false, reason: "Unknown request."};
   }

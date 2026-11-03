@@ -385,6 +385,7 @@ A typical setup: keep your own account in one browser, and the bot account in an
 | "Looking for a DuelingBook tab…" | Open [duelingbook.com](https://www.duelingbook.com/) in the same browser window. If it's already open, reload it. |
 | "Connected… Waiting for a duel to start" | This is normal until a duel begins. Start or watch a duel. |
 | "Tracking is off" | Flip the switch at the top of the panel to **On**. |
+| Auto-play changes phases and attacks, but never summons, sets or activates cards | Update to the newest version and reload DuelingBook. Older versions clicked the card's menu item, but DuelingBook then waited for a zone to be clicked (when its **Choose zones** option is on), or ignored the click (when card counts are hidden). If it still happens, look under **What it did** for "DuelingBook didn't make …" and [report a problem](#reporting-a-problem). |
 | "The extension can't see DuelingBook yet" (Firefox) | Click **Allow access to DuelingBook**, then reload the DuelingBook page. |
 | "Duel events aren't coming through" | DuelingBook may have updated. The board is still read, but "no response" isn't logged automatically. Please [report it](#reporting-a-problem). |
 | The extension disappeared (Safari) | Safari turns off unsigned extensions whenever it quits. In Safari's **Settings** > **Developer**, tick **Allow unsigned extensions** again ([step 4](#safari-on-a-mac)). |

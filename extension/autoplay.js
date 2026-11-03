@@ -15,7 +15,7 @@
 //   {type:"deck", play:"Draw card"}                                     any item on the deck's menu
 //   {type:"global", play:"Enter BP"}                                    Enter DP/SP/M1/BP/M2/EP, End turn
 // Add why:"..." to any action and it shows in the log. Add remember:{...} to have those values merged into
-// state.memory only once the play goes through, so a refused play is simply tried again next time.
+// state.memory once the play goes through. A play that's only early is tried again; a refused one keeps its used and count.
 
 const Autoplay = {
   async request(req){
@@ -110,7 +110,12 @@ async function apPerform(action, m, quietRetry){
   const r = await Autoplay.perform(req);
   const what = describeAction(action, m) + (why ? ` (${why})` : "");
   if (r.ok){ apLog(what, "auto"); if (remember) Object.assign(apMemory, remember); }
-  else if (!(quietRetry && (r.wait || r.reason === TOO_SOON))) apLog(`Couldn't ${what}: ${r.reason}`);
+  else if (!(quietRetry && (r.wait || r.reason === TOO_SOON))){
+    apLog(`Couldn't ${what}: ${r.reason}`);
+    // A play that was refused, not just early, counts as tried, so the strategy moves on to its next choice
+    // instead of trying the same one forever.
+    if (remember && !r.wait){ if (remember.used) apMemory.used = remember.used; if (remember.count !== undefined) apMemory.count = remember.count; }
+  }
   return r;
 }
 async function apTick(){
