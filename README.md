@@ -15,7 +15,9 @@ It only uses what both players can see on screen. It never peeks at your opponen
 - [Install it (about 5 minutes)](#install-it-about-5-minutes)
 - [Use it](#use-it)
 - [Turning it on partway through a duel](#turning-it-on-partway-through-a-duel)
-- [Auto-play (Solo Mode)](#auto-play-solo-mode)
+- [Auto-play](#auto-play)
+  - [The "AI takes over" switch](#the-ai-takes-over-switch)
+  - [Why it won't play on your own account](#why-it-wont-play-on-your-own-account)
 - [Bot account: playing people who choose to play a bot](#bot-account-playing-people-who-choose-to-play-a-bot)
 - [Something not working?](#something-not-working)
 - [What it can and can't see](#what-it-can-and-cant-see)
@@ -109,7 +111,7 @@ You can switch it on whenever you like, including in the middle of a duel. See [
   - **Their next draw** lists the cards they're most likely to draw next.
 - **Their deck**: the deck they're most likely playing, the cards it usually runs, and a place to paste their decklist if you have it.
 - **Log**: everything the extension has noticed, in order, newest first. The number on the tab counts new entries.
-- **Auto**: [auto-play](#auto-play-solo-mode), which can make plays for you in Solo Mode.
+- **Auto**: [auto-play](#auto-play), which can make plays for you in Solo Mode or on a bot account, with one switch to hand it control.
 - **Settings**: the "no response" options, tracking options, and **Report a problem**.
 
 ### Reading the numbers
@@ -154,15 +156,58 @@ There are two things it can't recover from before you switched it on:
 
 A note at the top of the Odds tab tells you when this happens.
 
-## Auto-play (Solo Mode)
+## Auto-play
 
 The **Auto** tab can make plays on DuelingBook for you: draw, summon, set, activate, attack, change phases and end the turn. It makes them through DuelingBook's own menus, exactly as if you'd clicked them.
 
 ![The Auto tab in a Solo Mode duel](docs/panel-autoplay.png)
 
-**It only works in DuelingBook's Solo Mode**, where you play both sides yourself. In any duel against another person, it's locked and refuses every play. Having a program play for you against someone who thinks they're playing you would be unfair to them, and DuelingBook treats outside help as cheating.
+### Where it plays, and where it doesn't
 
-Under **What it should do** you can choose:
+| Where | Does it play? |
+|---|---|
+| A **Solo Mode** duel, where you play both sides yourself | Yes. |
+| A **bot account** (its name contains "bot"), against someone who joined its labeled, unrated bot duel | Yes, once you've set it up. See [Bot account](#bot-account-playing-people-who-choose-to-play-a-bot). |
+| **Your own account**, against another person: pool duels, rated or unrated, challenges, tournaments | **No, never.** It's locked and refuses every play. See [Why it won't play on your own account](#why-it-wont-play-on-your-own-account). |
+| Watching someone else's duel | No. |
+
+The DuelingBook page itself enforces the lock, not just the panel, so no setting in the panel can get around it.
+
+### The "AI takes over" switch
+
+The switch at the top of the **Auto** tab hands control to the AI. While it's on, the learned model plays whenever auto-play is allowed to play, and you don't have to press anything else.
+
+**Set it up once:**
+
+1. **Load a model.** In the **Auto** tab, under **Learning**, press **Load a trained model** and pick one. If you haven't trained your own yet, use the starter model, `models/goat-starter.json`, from the [full project download](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip). See [Teaching it to play like you](#teaching-it-to-play-like-you) to train one on your own duels. The model stays loaded until you remove it.
+2. **For a bot account only:** tick the three confirmations under **Bot account**. See [Bot account](#bot-account-playing-people-who-choose-to-play-a-bot). Skip this if you only want it in Solo Mode.
+
+**Then, each time, flip the switch to On.** What happens next depends on where you are:
+
+- **In a Solo Mode duel:** it starts playing straight away, as player 1 (or both sides, if you chose that under **Which side it plays**). When the duel ends it waits, and it takes over again as soon as you open the next Solo Mode duel.
+- **Logged in as your bot account:** it turns on bot account mode, opens the Duel Room, hosts its labeled, unrated duel, accepts whoever joins, announces in chat that it's a bot, plays the duel, and hosts again afterwards. It keeps going duel after duel.
+- **Logged in as your own account, not in Solo Mode:** it does nothing, and says it's waiting. It never plays here.
+
+The line under the switch always tells you what it's doing:
+
+| It says | What it means |
+|---|---|
+| Playing this Solo Mode duel. | It has control. |
+| Playing on the bot account. | It has control, and is playing or hosting bot duels. |
+| Waiting: open a Solo Mode duel, or log in as your bot account. On any other account it never plays. | It's on, but you're somewhere it isn't allowed to play. |
+| Waiting: load a trained model under Learning. | It has nothing to play with. Load a model. |
+| Waiting: this is a bot account, but bot account mode is off. Confirm the checklist under Bot account. | Tick the three confirmations under **Bot account**. |
+| Waiting for the DuelingBook page. Open or reload it. | The panel can't reach DuelingBook. Reload the DuelingBook tab. |
+
+**To take control back,** flip the switch to Off, or press **Stop** under **Run it**. Either one stops it mid-turn and switches it off, so it doesn't take straight back over. On a bot account it also stops hosting new duels. Finish or leave any duel it's in by hand.
+
+**Keep the panel open.** The AI runs in the panel. If you close the panel, it stops playing. It remembers that the switch is on, and it carries on when you open the panel again.
+
+The switch only ever uses the **Learned model**, and the [safety rules](#safety-rules) below always apply.
+
+### Running it by hand
+
+If you'd rather control each step, leave the switch off and use **Run it**. Under **What it should do** you can choose:
 
 - **Learned model (plays like you)**: makes the plays a model trained on your own recorded duels thinks you'd make. See [Teaching it to play like you](#teaching-it-to-play-like-you).
 - **Nothing (just watch)**: runs but never plays. Use it to check that auto-play can see the duel.
@@ -173,9 +218,9 @@ To try it:
 1. On DuelingBook, start a **Solo Mode** duel.
 2. Open the **Auto** tab. The box at the top should say **Ready: Solo Mode duel**.
 3. Under **Plays available now**, click any play. Auto-play makes it on DuelingBook, so you can see it working.
-4. Or pick a setting under **What it should do**, choose how long to wait between plays, and press **Start**. Press **Stop** at any time.
+4. Or pick a setting under **What it should do**, choose how long to wait between plays with **Time between plays**, and press **Start**. Press **Stop** at any time.
 
-Everything it does is listed under **What it did**.
+Everything it does, including every play, every refused play and why, and every time it takes over or stops, is listed under **What it did**.
 
 ### Teaching it to play like you
 
@@ -225,13 +270,27 @@ python3 tools/sim_goat.py --fl 400 --eval --games 500 --model policy.json
 python3 tools/sim_goat.py --fl 400 --eval --games 500 --model policy.json --opponent old-policy.json
 ```
 
-Some safety rules always apply when it plays:
+Under **Which side it plays**, choose whether it plays only player 1, or both sides against itself.
 
-- It never makes a kind of play it has never seen you make.
+### Safety rules
+
+These always apply, whether you use the switch or **Start**:
+
+- It only plays where the table in [Where it plays](#where-it-plays-and-where-it-doesnt) says it can.
+- It only makes plays that DuelingBook's own menus offer right now, and waits at least 0.3 seconds between plays.
+- It never makes a kind of play the model has never seen made.
 - It makes each card's play at most once per turn, so each monster attacks at most once.
 - Once it ends its turn, it waits for the next one, and it ends the turn after 40 plays.
+- On a bot account, it only plays its own cards on its own turn.
 
-Under **Which side it plays**, choose whether it plays only player 1, or both sides against itself.
+### Why it won't play on your own account
+
+It would be easy to let it play on your own account against anyone. It deliberately doesn't, and there's no setting to make it:
+
+- **It's unfair to your opponent.** They think they're playing you. Secretly playing them with a program takes away their choice about whether to play a bot.
+- **DuelingBook treats it as cheating.** Outside help during a duel against a person is against the site's rules, and the account it's played on can be banned. That would be your main account, with its rating and history.
+- **The bot account is the honest way to do it.** If you want the AI to play real people, give it its own labeled account. Then everyone who plays it has chosen to, and your own account is never at risk. See the next section.
+
 
 ## Bot account: playing people who choose to play a bot
 
@@ -260,12 +319,14 @@ From there it handles each duel itself: it accepts the first person who joins, p
 
 ### Let it take over when the bot logs in
 
-Tick **Take over when the bot account logs in** under **Bot account mode**, and load a trained model under **Learning**. After that, logging in as the bot is all it takes. It opens the Duel Room, hosts its labeled duel, starts the learned model, and hosts again after each duel.
+Once the three confirmations are ticked and a model is loaded, the [AI takes over](#the-ai-takes-over-switch) switch does everything above for you. Flip it on, and logging in as the bot is all it takes. It turns on bot account mode, opens the Duel Room, hosts its labeled duel, starts the learned model, and hosts again after each duel.
 
 - It only does this when the logged-in account's name contains "bot", so logging in to your own account does nothing.
 - It hosts with the deck the Duel Room picks first, so make the bot's deck its default deck.
-- Pressing **Stop** hands control back to you. It stops playing and stops hosting again until you press **Start** or reopen the panel.
+- Flipping the switch off, or pressing **Stop**, hands control back to you. It stops playing and stops hosting new duels.
 - The panel has to stay open, as with every other auto-play mode.
+
+A typical setup: keep your own account in one browser, and the bot account in another browser, or a separate browser profile, with the panel open and the switch on. Then the bot plays on its own while you play on your account as normal.
 
 ## Something not working?
 
@@ -367,7 +428,7 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
     - `--model policy.json --eval` plays the trained model against the scripted player (or `--opponent rollout`, or another policy.json), using the same guards as the extension, and reports the win rate. Runs use all cores (`--jobs`).
 
     It's a rough model of the game, not a rules engine: chains are one link deep, and effects outside those decks do nothing.
-  - `autoplay.js` runs the loop in the panel. A strategy is an entry in `STRATEGIES` with a `decide(state)` function that returns an action or `null`. The comment at the top of the file lists what `state` holds and what an action looks like.
+  - `autoplay.js` runs the loop in the panel. A strategy is an entry in `STRATEGIES` with a `decide(state)` function that returns an action or `null`. The comment at the top of the file lists what `state` holds and what an action looks like. The "AI takes over" switch is `settings.botAuto`: `takeoverTick` checks every 3 seconds and starts the learned model when the page reports a Solo duel or a bot account in bot account mode. It only reads the lock the page hook reports, so it can't unlock anything. In bot account mode the same setting tells the hook to open the Duel Room and host, and `botPause` stops the hosting when the switch goes off.
 - **`report.html`** gathers diagnostics from the panel and the DuelingBook tab, and opens a prefilled GitHub issue.
 
 If DuelingBook changes its client, the panel says duel events aren't coming through. Board reading may keep working in that case.

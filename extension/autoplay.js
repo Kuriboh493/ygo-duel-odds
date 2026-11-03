@@ -202,36 +202,50 @@ function botSync(){
   $("bot-on").disabled = !all;
   if (!all && settings.bot){ settings.bot = false; $("bot-on").checked = false; }
   $("bot-host").disabled = !(all && settings.bot);
-  $("bot-auto").disabled = !(all && settings.bot);
   settings.botAck = all;
 }
-// Taking over on login: once the bot account is logged in, it starts the learned model by itself. The page hook
-// opens the Duel Room and hosts. Pressing Stop hands control back until the panel is reopened.
-let botTookBack = false, botAutoNote = "";
-async function botAutoTick(){
-  if (!(settings.bot && settings.botAck && settings.botAuto) || apRunning || apBusy || botTookBack) return;
-  const m = await Autoplay.moves();
-  if (!m || !m.botOn || !m.isBotAccount) return;
-  if (!mlModel){
-    if (botAutoNote !== "model") apLog("Bot account logged in, but there's no trained model to play with. Load one under Learning.");
-    botAutoNote = "model"; return;
-  }
-  botAutoNote = "";
-  apSettings.strategy = "learned"; apSyncControls(); apSave();
-  apLast = m; apLog("Bot account logged in: taking over.");
-  apStart();
+// The "AI takes over" switch (settings.botAuto). While it's on, the learned model plays whenever auto-play is
+// allowed to: in a Solo Mode duel, or on the bot account in bot account mode, where the page hook also opens the
+// Duel Room and hosts its labeled duels. It unlocks nothing: on any other account it only waits.
+let aiNoteKey = "";
+function aiNote(key, msg){ if (aiNoteKey !== key){ aiNoteKey = key; $("ai-note").textContent = msg; } }
+function aiSync(){
+  $("ai-on").checked = !!settings.botAuto; $("ai-lbl").textContent = settings.botAuto ? "On" : "Off";
+  if (!settings.botAuto) aiNote("off", "Turn it on and the learned model plays whenever it's allowed to: in a Solo Mode duel, or on your bot account.");
 }
-setInterval(() => { botAutoTick().catch(() => {}); }, 3000);
+function aiSet(on, why){
+  if (on && !mlModel){ aiSync(); return toast("Load a trained model first, under Learning. models/goat-starter.json is a good start."); }
+  settings.botAuto = on;
+  // Once the bot checklist is confirmed, the switch turns bot account mode on too, so logging in as the bot is enough.
+  if (on && settings.botAck && !settings.bot){ settings.bot = true; $("bot-on").checked = true; }
+  botSync(); saveSettings(); aiSync();
+  Autoplay.request({type:"botPause", paused: !on});
+  if (on){ aiNoteKey = ""; takeoverTick().catch(() => {}); toast("AI take-over is on. Keep this panel open."); }
+  else { if (apRunning) apStop(why || "Stopped: AI take-over switched off."); toast("AI take-over is off. You're in control."); }
+}
+async function takeoverTick(){
+  if (!settings.botAuto || apBusy) return;
+  if (apRunning){ aiNote("run", apLast && apLast.mode === "bot" ? "Playing on the bot account." : "Playing this Solo Mode duel."); return; }
+  if (!mlModel) return aiNote("model", "Waiting: load a trained model under Learning.");
+  const m = await Autoplay.moves();
+  if (!m) return aiNote("page", "Waiting for the DuelingBook page. Open or reload it.");
+  const solo = m.solo && m.allowed, botAcct = m.botOn && m.isBotAccount;
+  if (solo || botAcct){
+    apSettings.strategy = "learned"; apSyncControls(); apSave();
+    apLast = m; apLog(botAcct ? "Bot account logged in: taking over." : "Solo Mode duel open: taking over.");
+    apStart(); aiNoteKey = ""; return;
+  }
+  if (m.isBotAccount) return aiNote("botoff", "Waiting: this is a bot account, but bot account mode is off. Confirm the checklist under Bot account.");
+  aiNote("wait", "Waiting: open a Solo Mode duel, or log in as your bot account. On any other account it never plays.");
+}
+setInterval(() => { takeoverTick().catch(() => {}); }, 3000);
+$("ai-on").addEventListener("change", () => aiSet($("ai-on").checked));
 for (const c of document.querySelectorAll(".bot-check")) c.addEventListener("change", () => { botSync(); saveSettings(); });
 $("bot-on").addEventListener("change", () => {
   settings.bot = $("bot-on").checked; botSync(); saveSettings();
   toast(settings.bot ? "Bot account mode is on. It only plays people who join its labeled, unrated duel." : "Bot account mode is off.");
 });
 $("bot-keep").addEventListener("change", () => { settings.botKeepHosting = $("bot-keep").checked; saveSettings(); });
-$("bot-auto").addEventListener("change", () => {
-  settings.botAuto = $("bot-auto").checked; botTookBack = false; saveSettings();
-  toast(settings.botAuto ? "It takes over whenever the bot account is logged in, as long as this panel is open." : "It won't take over on login.");
-});
 $("bot-host").addEventListener("click", async () => {
   const r = await Autoplay.request({type:"botHost", format: settings.format});
   toast(r.ok ? "Hosting a bot duel. It accepts the first person who joins." : `Couldn't host: ${r.reason}`);
@@ -240,8 +254,8 @@ $("bot-host").addEventListener("click", async () => {
 api.storage.local.get(["settings"]).then(r => {
   const st = r.settings || {};
   if (st.botAck) for (const c of document.querySelectorAll(".bot-check")) c.checked = true;
-  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting; $("bot-auto").checked = !!st.botAuto;
-  botSync();
+  $("bot-on").checked = !!(st.bot && st.botAck); $("bot-keep").checked = !!st.botKeepHosting;
+  botSync(); aiSync();
 }).catch(() => {});
 
 // ---------- Learning: recording, exporting, and loading a trained model ----------
@@ -303,7 +317,9 @@ $("ap-strategy").addEventListener("change", () => { apSettings.strategy = $("ap-
 $("ap-delay").addEventListener("input", () => { apSettings.delay = +$("ap-delay").value; apSyncControls(); });
 $("ap-delay").addEventListener("change", apSave);
 $("ap-run").addEventListener("click", () => {
-  botTookBack = apRunning; Autoplay.request({type:"botPause", paused: botTookBack});
+  // Stopping while the switch is on turns the switch off, so it doesn't take straight back over.
+  if (apRunning && settings.botAuto) return aiSet(false, "Stopped: you took back control.");
+  Autoplay.request({type:"botPause", paused: apRunning});
   if (apRunning) apStop(); else apStart();
 });
 api.storage.local.get(["autoplay"]).then(r => { if (r.autoplay) Object.assign(apSettings, r.autoplay); if (!STRATEGIES[apSettings.strategy]) apSettings.strategy = "none"; apSyncControls(); }).catch(() => apSyncControls());

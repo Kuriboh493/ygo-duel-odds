@@ -173,6 +173,7 @@ a.btn{text-decoration:none;display:inline-block}
 .power input:checked + .track::after{left:16px}
 .power input:focus-visible + .track{outline:2px solid var(--accent);outline-offset:2px}
 .power input:checked ~ .power-lbl{color:var(--good)}
+.ai-switch{margin:12px 0 6px;font-size:14px;color:inherit}
 @media (prefers-reduced-motion:no-preference){.power .track,.power .track::after{transition:all .15s ease}}
 body.off .duel-only,body.off .idle-only{display:none}
 body:not(.off) .off-only{display:none}
