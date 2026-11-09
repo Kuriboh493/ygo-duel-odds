@@ -14,6 +14,21 @@ exactly as it would on recorded duels.
 This is a rough model of the game, not a rules engine: card effects are simplified, chains are one deep,
 and the opponent's traps follow fixed habits. A model trained on it learns the scripted player's habits for
 each deck, which makes a reasonable starting point before you record your own duels.
+
+What it does get right, because the model's values depend on it: tokens can't be tributed; Spirits (Asura
+Priest, Tsukuyomi) return to the hand in the End Phase, and Asura attacks every monster; Premature Burial,
+Call of the Haunted and Snatch Steal stay on the field tied to their monster, so Heavy Storm, Trunade and
+Mobius undo them; Nightmare Wheel and Xing Zhen Hu lock what they target; Sangan only searches from the
+field; Fusilier Dragon lands without a tribute as a 1400; Cyber-Stein pays for the dragon when it finishes
+the opponent; Rescue Cat, Gigantes, Zombyra, Mataza, Spirit Reaper, Thestalos, Granmarg, Sacred Crane,
+Reckless Greed, Monster Reincarnation and Toon Table of Contents do what they say. Scapegoat into
+Metamorphosis makes Thousand-Eyes Restrict, which absorbs their best monster, stops every other monster
+attacking, loses its meal instead of itself in battle, and loses it for good when flipped face-down. A player
+who can't make their normal draw loses.
+
+tools/test_sim_goat.py checks these on set-up positions.
+
+  python3 tools/sim_goat.py --type "Goat Control" --teacher rollout --games 3000 -o mirror.json   # mirror matches only
 """
 import argparse, json, math, os, random, sys, time
 from collections import Counter
@@ -21,7 +36,7 @@ from collections import Counter
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 GLOBAL_PLAYS = ["Enter DP", "Enter SP", "Enter M1", "Enter BP", "Enter M2", "Enter EP", "End turn"]
-MAX_TURNS = 40
+MAX_TURNS = 80  # long enough for both 40-card decks to run out, which ends a stalled game
 
 # ---------- Cards ----------
 def load_cards():
@@ -45,13 +60,15 @@ def load_decks(names):
         decks[fn[:-4]] = (title, cards)
     return decks
 
-def load_fl_decks(n):
+def load_fl_decks(n, deck_type=None):
     """The n most recent Format Library topping Goat decks (cached by tools/train_decks.py), titled by deck type."""
     lp, dp = os.path.join(HERE, ".cache", "fl_list_goat.json"), os.path.join(HERE, ".cache", "fl_decks_goat.json")
     if not os.path.exists(dp): sys.exit("Format Library decks missing: run python3 tools/train_decks.py once to download them.")
     meta = {str(r["id"]): r for r in json.load(open(lp, encoding="utf-8"))}
     got = json.load(open(dp, encoding="utf-8"))
-    rows = sorted(((meta.get(k, {}).get("publishDate") or "", k, v) for k, v in got.items() if 40 <= len(v.get("names") or []) <= 60), reverse=True)
+    rows = sorted(((meta.get(k, {}).get("publishDate") or "", k, v) for k, v in got.items() if 40 <= len(v.get("names") or []) <= 60
+                   and (not deck_type or (meta.get(k, {}).get("deckTypeName") or "").lower() == deck_type.lower())), reverse=True)
+    if deck_type and not rows: sys.exit(f'No Format Library Goat decks of type "{deck_type}". Deck types are named as on formatlibrary.com, like "Goat Control".')
     decks = {}
     for date, k, v in rows[:n]:
         decks["fl" + k] = (meta.get(k, {}).get("deckTypeName") or "Other", [x for x in v["names"] if x])
@@ -72,9 +89,24 @@ NO_BIG_ATTACKS = {"Gravity Bind", "Level Limit - Area B"}
 FLOATERS = {"Mystic Tomato": "DARK", "Giant Rat": "EARTH", "Shining Angel": "LIGHT"}
 # Spells the scripted player casts as removal or plusses on its own turn, with when they're worth it.
 STEALS = {"Snatch Steal", "Creature Swap", "Metamorphosis", "Mind Control", "Brain Control"}
+ATK_TRAPS |= {"Widespread Ruin"}
+# Spirits go back to the hand in the End Phase of any turn they're face-up.
+SPIRITS = {"Asura Priest", "Tsukuyomi"}
+# Cards that stay on the field tied to another card: equips and locks. When one leaves, see Game.unlink.
+LINKED = {"Premature Burial", "Call of the Haunted", "Snatch Steal", "Nightmare Wheel", "Xing Zhen Hu"}
+CONTINUOUS |= LINKED
+# Monsters that Normal Summon without a tribute whatever their level (Fusilier lands as a 1400/1000).
+NO_TRIBUTE = {"Fusilier Dragon, the Dual-Mode Beast"}
+TER = "Thousand-Eyes Restrict"
+LEVEL1 = lambda pl: any(x.level == 1 or x.token for x in pl.mon)
+
+def tributes_for(c):
+    if c.name in NO_TRIBUTE: return 0
+    return 2 if c.level >= 7 else 1 if c.level >= 5 else 0
 
 class Card:
-    __slots__ = ("uid", "name", "kind", "race", "atk", "def_", "level", "attr", "mtype", "fd", "pos", "set_turn", "attacked", "token")
+    __slots__ = ("uid", "name", "kind", "race", "atk", "def_", "level", "attr", "mtype", "fd", "pos", "set_turn", "attacked", "token",
+                 "link", "locked", "hit", "owner", "eats")
     def __init__(self, uid, name, info):
         self.uid, self.name = uid, name
         t = info["type"] if info else "Token"
@@ -86,6 +118,11 @@ class Card:
         self.attr = (info or {}).get("attribute", "")
         self.mtype = (info or {}).get("race", "")
         self.fd, self.pos, self.set_turn, self.attacked, self.token = False, "ATK", 0, False, info is None
+        # link: the card this one is tied to (an equip and its monster, a lock and what it locks).
+        # locked: the card locking this one, if any. hit: uids of the monsters this one attacked this turn, "direct" for a direct attack.
+        self.link, self.locked, self.hit, self.owner = None, None, [], 0
+        # eats: the monster a Thousand-Eyes Restrict has absorbed, kept as an equip in its controller's Spell & Trap zone.
+        self.eats = None
 
 class Player:
     def __init__(self, name, deck_title, cards, rnd):
@@ -93,7 +130,7 @@ class Player:
         self.deck = cards[:]; rnd.shuffle(self.deck)
         self.hand, self.mon, self.st, self.gy, self.ban = [], [], [], [], []
         self.lp, self.plays, self.summons, self.obligations = 8000, 0, 0, []
-        self.skip_draw, self.drew = False, False
+        self.skip_draw, self.drew = 0, False
         self.draws, self.discards, self.last, self.last_card, self.history = 0, 0, None, None, []
         self.borrowed, self.no_attack_turns, self.lost_monster = [], 0, False
 
@@ -107,7 +144,8 @@ class Game:
         self.p = [Player("P1", decks[a][0], [self.make(n) for n in decks[a][1]], rnd),
                   Player("P2", decks[b][0], [self.make(n) for n in decks[b][1]], rnd)]
         self.records, self.turn, self.active, self.phase, self.winner = [], 1, rnd.randrange(2), "DP", None
-        for pl in self.p:
+        for i, pl in enumerate(self.p):
+            for c in pl.deck: c.owner = i
             for _ in range(5): self.draw(pl)
 
     def make(self, name):
@@ -120,22 +158,96 @@ class Game:
         if not pl.deck: self.winner = self.opp(pl); return None
         c = pl.deck.pop(); pl.hand.append(c); return c
 
+    def on_field(self, c):
+        return next((pl for pl in self.p if c in pl.mon or c in pl.st), None)
+
+    def unlink(self, c):
+        """c is leaving the field: whatever was tied to it follows. An equip's monster is destroyed, a destroyed
+        equip's monster too; Snatch Steal's monster goes back to its owner; a lock lets go of what it locked."""
+        if c.eats is not None:
+            m, c.eats = c.eats, None
+            holder = self.on_field(m)
+            if holder: self.to_gy(holder, m)
+        for pl in self.p:
+            for x in pl.mon:
+                if x.eats is c: x.eats = None; x.atk = x.def_ = 0
+        o, c.link = c.link, None
+        for pl in self.p:
+            for x in pl.mon + pl.st:
+                if x.locked is c: x.locked = None
+        if o is None: return
+        if o.link is c: o.link = None
+        holder = self.on_field(o)
+        if holder is None: return
+        if c.name == "Snatch Steal" and o.kind == "Monster":
+            owner = self.p[o.owner]
+            holder.mon.remove(o)
+            if len(owner.mon) < 5: o.attacked, o.hit = False, []; owner.mon.append(o)
+            else: owner.gy.append(o)
+        elif c.name in ("Nightmare Wheel", "Xing Zhen Hu"): pass
+        else: self.to_gy(holder, o)
+
     def to_gy(self, pl, c, banish=False):
+        from_field = c in pl.mon or c in pl.st
         if c in pl.mon and not c.token: pl.lost_monster = True
         for zone in (pl.hand, pl.mon, pl.st):
             if c in zone: zone.remove(c)
+        if from_field: self.unlink(c)
+        c.locked = None
         # A borrowed monster goes to its owner's graveyard, and isn't handed back at the end of the turn.
         for who in self.p:
             for b in who.borrowed[:]:
                 if b[0] is c: who.borrowed.remove(b)
-        c.fd, c.attacked, c.pos = False, False, "ATK"
+        c.fd, c.attacked, c.pos, c.hit = False, False, "ATK", []
         if c.token: return
+        # A card you took from them is still theirs once it leaves the field.
+        if c.kind == "Monster" and from_field: pl = self.p[c.owner]
         (pl.ban if banish else pl.gy).append(c)
         # Sangan: when it goes to the graveyard from the field, search a monster with 1500 or less ATK.
-        if c.name == "Sangan" and not banish:
+        if c.name == "Sangan" and from_field and not banish:
             opts = [x for x in pl.deck if x.kind == "Monster" and x.atk <= 1500]
             if opts:
                 best = max(opts, key=lambda x: (x.name in FLIP, x.atk)); pl.deck.remove(best); pl.hand.append(best)
+        # Night Assailant discarded from the hand brings a Flip Effect monster back from the graveyard.
+        elif c.name == "Night Assailant" and not from_field and not banish:
+            opts = [x for x in pl.gy if x.name in FLIP and x is not c]
+            if opts: best = max(opts, key=lambda x: (x.name == "Magician of Faith", x.atk)); pl.gy.remove(best); pl.hand.append(best)
+
+    def special(self, pl, c, pos="ATK", fd=False):
+        """Special Summons c (already removed from wherever it was) and runs what triggers on that."""
+        c.fd, c.pos, c.attacked, c.hit, c.set_turn = fd, pos, False, [], self.turn
+        pl.mon.append(c)
+        if c.name == "Sacred Crane" and not fd: self.draw(pl)
+
+    def flip_down(self, c):
+        """Turns a monster face-down. A face-down Thousand-Eyes Restrict loses the monster it absorbed, and its stats."""
+        c.fd, c.pos = True, "DEF"
+        if c.eats is not None:
+            m, c.eats = c.eats, None
+            holder = self.on_field(m)
+            if holder: self.to_gy(holder, m)
+            c.atk = c.def_ = 0
+
+    def absorb(self, pl, ter):
+        """Thousand-Eyes Restrict takes the opponent's strongest monster as an equip and gains its ATK and DEF."""
+        op = self.opp(pl)
+        if ter.eats is not None or len(pl.st) >= 5: return
+        ts = [x for x in op.mon if not x.token] or op.mon
+        if not ts: return
+        m = max(ts, key=lambda x: (not x.fd, self.eff_atk(op, x)))
+        self.unlink(m); m.locked = None; op.mon.remove(m)
+        if m.token: return
+        m.fd, m.pos, m.attacked, m.hit = False, "ATK", False, []
+        pl.st.append(m); ter.eats = m; ter.atk, ter.def_ = m.atk, m.def_
+
+    def bounce(self, holder, c):
+        """Returns c from the field to its owner's hand."""
+        self.unlink(c); c.locked = None
+        for zone in (holder.mon, holder.st):
+            if c in zone: zone.remove(c)
+        if c.token: return
+        c.fd, c.pos, c.attacked, c.hit = False, "ATK", False, []
+        self.p[c.owner].hand.append(c)
 
     def destroy(self, owner_of, c, banish=False):
         for pl in self.p:
@@ -160,14 +272,42 @@ class Game:
         """Jinzo or a face-up Royal Decree stops every trap."""
         return self.face_up({"Jinzo", "Royal Decree"})
 
+    def is_locked(self, c):
+        """Held by a face-up Nightmare Wheel or Xing Zhen Hu that's still on the field."""
+        return c.locked is not None and not c.locked.fd and self.on_field(c.locked) is not None
+
+    def attacks_left(self, c):
+        """How many attacks c still has this turn: Asura Priest hits every monster, Mataza attacks twice."""
+        if c.name == "Asura Priest": return 99
+        return (2 if c.name == "Mataza the Zapper" else 1) - len(c.hit)
+
+    def can_attack(self, pl, c, t=None):
+        if c.fd or c.pos != "ATK" or self.phase != "BP" or pl.no_attack_turns or self.is_locked(c): return False
+        if c.level >= 4 and self.face_up(NO_BIG_ATTACKS): return False
+        # Thousand-Eyes Restrict: no other monster can attack.
+        if any(x.name == TER and not x.fd and x is not c for who in self.p for x in who.mon): return False
+        if t is None:
+            if self.opp(pl).mon or c.name == "Zombyra the Dark": return False
+            return not c.hit
+        if c.name == "Asura Priest": return "direct" not in c.hit and t.uid not in c.hit
+        return self.attacks_left(c) > 0
+
     def battle_destroy(self, owner, c):
         """Destroys c by battle, and runs what triggers on it."""
+        if c.name == TER and c.eats is not None:
+            holder = self.on_field(c.eats)
+            if holder: self.to_gy(holder, c.eats)
+            return
         if not self.destroy(owner, c, banish=None): return
         attr = FLOATERS.get(c.name)
         if attr and len(owner.mon) < 5:
             opts = [x for x in owner.deck if x.kind == "Monster" and x.attr == attr and x.atk <= 1500]
             if opts:
-                best = max(opts, key=lambda x: x.atk); owner.deck.remove(best); best.fd, best.pos = False, "ATK"; owner.mon.append(best)
+                best = max(opts, key=lambda x: x.atk); owner.deck.remove(best); self.special(owner, best)
+        # Gigantes takes every Spell and Trap with it.
+        if c.name == "Gigantes":
+            for who in self.p:
+                for x in who.st[:]: self.to_gy(who, x)
 
     # ---------- What the player could do: named as DuelingBook's menus name them ----------
     def candidates(self, pl):
@@ -225,9 +365,19 @@ class Game:
     def play_turn(self):
         pl = self.p[self.active]
         pl.plays = pl.summons = pl.draws = pl.discards = 0; pl.drew = False; pl.last = pl.last_card = None; pl.history = []; self.phase = "DP"
-        for c in pl.mon: c.attacked = False
+        op = self.opp(pl)
+        # A player who can't make their normal draw loses (the first player skips it on turn 1).
+        if not pl.deck and not pl.skip_draw and self.turn > 1: self.winner = op; return
+        for c in pl.mon: c.attacked, c.hit = False, []
         # Sinister Serpent comes back to the hand in the Standby Phase.
         for c in [x for x in pl.gy if x.name == "Sinister Serpent"][:1]: pl.gy.remove(c); pl.hand.append(c)
+        # Standby Phase upkeep: Nightmare Wheel burns the locked monster's controller, Snatch Steal pays its owner.
+        for x in pl.st:
+            if x.name == "Nightmare Wheel" and not x.fd and x.link and self.on_field(x.link) is op: self.damage(op, 500)
+        for x in op.st:
+            if x.name == "Snatch Steal" and not x.fd and x.link and x.link in op.mon: pl.lp += 1000
+        for x in pl.mon:
+            if x.name == TER and not x.fd and x.eats is None: self.absorb(pl, x)
         pl.lost_monster = False
         self.continue_turn()
 
@@ -275,14 +425,18 @@ class Game:
             if kind == "discard":
                 for _ in range(min(n, len(pl.hand))): self.to_gy(pl, self.rnd.choice(pl.hand))
         pl.obligations = []
-        # Monsters taken until the end of the turn go back, and ones brought back for the turn are banished.
+        # Monsters taken until the end of the turn go back, ones brought back for the turn are banished,
+        # and Rescue Cat's beasts are destroyed.
         for c, how in pl.borrowed[:]:
             if c in pl.mon:
-                pl.mon.remove(c)
-                if how == "return" and len(op.mon) < 5: c.attacked = False; op.mon.append(c)
+                if how == "destroy": self.to_gy(pl, c); continue
+                self.unlink(c); pl.mon.remove(c)
+                if how == "return" and len(op.mon) < 5: c.attacked, c.hit = False, []; op.mon.append(c)
                 elif how == "return": op.gy.append(c)
                 else: pl.ban.append(c)
         pl.borrowed = []
+        # Spirits return to the hand.
+        for c in [x for x in pl.mon if x.name in SPIRITS and not x.fd]: self.bounce(pl, c)
         if pl.no_attack_turns: pl.no_attack_turns -= 1
         self.active, self.turn = 1 - self.active, self.turn + 1
 
@@ -311,6 +465,8 @@ class Game:
             q.obligations, q.history = list(pl.obligations), list(pl.history)
             q.borrowed = [(cc(c), how) for c, how in pl.borrowed]
             g.p.append(q)
+        for n in list(cmap.values()):
+            n.link, n.locked, n.hit, n.eats = cc(n.link), cc(n.locked), list(n.hit), cc(n.eats)
         me = g.p[self.p.index(viewer)]; op = g.opp(me)
         rnd.shuffle(me.deck)
         fd_mon = [c for c in op.mon if c.fd]; fd_st = [c for c in op.st if c.fd]; loose = op.hand + op.deck
@@ -331,7 +487,11 @@ class Game:
         op = self.opp(pl)
         cards = lambda p: len(p.hand) + len(p.mon) + len(p.st)
         power = lambda p: sum(self.eff_atk(p, x) for x in p.mon if not x.fd) / 1000
-        return math.tanh((pl.lp - op.lp) / 4000 + 0.25 * (cards(pl) - cards(op)) + 0.1 * (power(pl) - power(op)))
+        # A Chaos monster in hand with its food in the graveyard is a monster on the board in waiting.
+        chaos = 0.0
+        if any(x.attr == "LIGHT" for x in pl.gy) and any(x.attr == "DARK" for x in pl.gy):
+            chaos = 0.2 * sum(1 for x in pl.hand if x.name in ("Black Luster Soldier - Envoy of the Beginning", "Chaos Sorcerer"))
+        return math.tanh((pl.lp - op.lp) / 4000 + 0.25 * (cards(pl) - cards(op)) + 0.1 * (power(pl) - power(op)) + chaos)
 
     def apply(self, pl, key):
         """Carries out one play. Returns True when the turn ends."""
@@ -346,7 +506,7 @@ class Game:
                 c = self.draw(pl)
                 if self.phase == "DP" and not pl.drew:
                     pl.drew = True
-                    if c and pl.skip_draw: pl.skip_draw = False; pl.hand.remove(c); pl.deck.append(c)
+                    if c and pl.skip_draw: pl.skip_draw -= 1; pl.hand.remove(c); pl.deck.append(c)
                     # Drop Off: they discard the card they just drew.
                     elif c: self.respond(op, "draw", c)
                 if pl.obligations and pl.obligations[0][0] == "draw":
@@ -375,6 +535,7 @@ class Game:
             if c.set_turn >= self.turn: return False
             c.fd, c.pos = False, "ATK"; self.flip_effect(pl, c); self.respond(op, "summon", c); return False
         if play in ("To DEF", "To ATK"):
+            if self.is_locked(c): return False
             c.pos = "DEF" if play == "To DEF" else "ATK"; return False
         if play == "Set ST":
             pl.hand.remove(c); c.fd, c.set_turn = True, self.turn; pl.st.append(c); return False
@@ -386,17 +547,23 @@ class Game:
 
     def summon(self, pl, c, play):
         op = self.opp(pl)
-        tributes = 0 if play.startswith("SS") else (2 if c.level >= 7 else 1 if c.level >= 5 else 0)
+        tributes = 0 if play.startswith("SS") else tributes_for(c)
         if play.startswith("SS") and c.name in ("Black Luster Soldier - Envoy of the Beginning", "Chaos Sorcerer"):
             light = [x for x in pl.gy if x.attr == "LIGHT"]; dark = [x for x in pl.gy if x.attr == "DARK"]
             if not light or not dark: return
             for x in (light[0], dark[0]): pl.gy.remove(x); pl.ban.append(x)
+        elif play.startswith("SS") and c.name == "Gigantes":
+            earth = [x for x in pl.gy if x.attr == "EARTH" and x.kind == "Monster"]
+            if not earth: return
+            pl.gy.remove(earth[0]); pl.ban.append(earth[0])
         if tributes:
-            fodder = sorted([x for x in pl.mon], key=lambda x: x.atk)[:tributes]
+            # Tokens can't be tributed for a Tribute Summon. The weakest monsters go, keeping equipped ones.
+            fodder = sorted([x for x in pl.mon if not x.token], key=lambda x: (x.link is not None, x.atk))[:tributes]
             if len(fodder) < tributes: return
             for x in fodder: self.to_gy(pl, x)
         pl.hand.remove(c); pl.mon.append(c)
-        c.fd = play == "Set monster"; c.pos = "DEF" if play in ("Set monster", "SS DEF") else "ATK"; c.attacked = False; c.set_turn = self.turn
+        c.fd = play == "Set monster"; c.pos = "DEF" if play in ("Set monster", "SS DEF") else "ATK"; c.attacked, c.hit = False, []; c.set_turn = self.turn
+        if c.name in NO_TRIBUTE and not play.startswith("SS"): c.atk, c.def_ = c.atk // 2, c.def_ // 2
         if play in ("Normal Summon", "Set monster"): pl.summons += 1
         if c.fd: return
         if self.respond(op, "summon", c): return
@@ -406,7 +573,7 @@ class Game:
             self.destroy(op, max(op.mon, key=lambda x: x.atk)); self.to_gy(pl, c)
         elif c.name == "Tsukuyomi":
             up = [x for x in op.mon if not x.fd]
-            if up: t = max(up, key=lambda x: x.atk); t.fd, t.pos = True, "DEF"
+            if up: self.flip_down(max(up, key=lambda x: x.atk))
         elif c.name in ("Black Luster Soldier - Envoy of the Beginning", "Chaos Sorcerer"):
             ts = [x for x in op.mon if not x.fd] if c.name == "Chaos Sorcerer" else op.mon
             if ts: self.destroy(op, max(ts, key=lambda x: x.atk), banish=True)
@@ -426,7 +593,34 @@ class Game:
                     self.destroy(op if x in op.mon else pl, x)
         elif c.name == "Abyss Soldier" and pl.hand and op.mon:
             self.to_gy(pl, min(pl.hand, key=lambda x: (x.name in DRAW_SPELLS, x.atk)))
-            t = max(op.mon, key=lambda x: x.atk); op.mon.remove(t); t.fd, t.pos = False, "ATK"; op.hand.append(t)
+            self.bounce(op, max(op.mon, key=lambda x: x.atk))
+        elif c.name == "Thestalos the Firestorm Monarch" and tributes and op.hand:
+            x = self.rnd.choice(op.hand); self.to_gy(op, x)
+            if x.kind == "Monster": self.damage(op, 100 * x.level)
+        elif c.name == "Granmarg the Rock Monarch" and tributes:
+            fd = [x for x in op.st if x.fd] + [x for x in op.mon if x.fd]
+            if fd: self.destroy(op, fd[0])
+        # Cyber-Stein: 5000 Life Points for a 4500 ATK Fusion Monster, when that's a push worth making.
+        elif c.name == "Cyber-Stein" and pl.lp > 5000 and len(pl.mon) < 5 and self.stein_worth_it(pl):
+            self.damage(pl, 5000)
+            d = self.make("Blue-Eyes Ultimate Dragon"); d.owner = self.p.index(pl); self.special(pl, d)
+        # Rescue Cat: tribute itself for two level 3 or lower Beasts from the deck, which are destroyed in the End Phase.
+        elif c.name == "Rescue Cat":
+            beasts = sorted([x for x in pl.deck if x.mtype == "Beast" and x.level <= 3], key=lambda x: -x.atk)[:2]
+            if beasts:
+                self.to_gy(pl, c)
+                for b in beasts:
+                    if len(pl.mon) >= 5: break
+                    pl.deck.remove(b); self.special(pl, b); pl.borrowed.append((b, "destroy"))
+
+    def stein_worth_it(self, pl):
+        """Cyber-Stein's player pays when the dragon and its other attackers can finish the opponent, or nearly."""
+        op = self.opp(pl)
+        blockers = [x for x in op.mon if not x.fd and (x.pos == "DEF" and x.def_ >= 4500 or x.pos == "ATK" and self.eff_atk(op, x) >= 4500)]
+        if blockers: return False
+        swing = 4500 + sum(self.eff_atk(pl, x) for x in pl.mon if not x.fd and x.pos == "ATK" and x.hit == [] and x.name != "Cyber-Stein")
+        if op.mon: swing -= max(x.def_ if x.pos == "DEF" or x.fd else self.eff_atk(op, x) for x in op.mon)
+        return swing >= op.lp or (pl.lp - 5000 >= 2000 and op.lp <= 4500 + 1000 * len(op.mon))
 
     def flip_effect(self, pl, c):
         op = self.opp(pl)
@@ -435,7 +629,7 @@ class Game:
             if sp: best = next((x for x in sp if x.name in DRAW_SPELLS), sp[-1]); pl.gy.remove(best); pl.hand.append(best)
         elif c.name == "Gravekeeper's Spy":
             spy = next((x for x in pl.deck if x.name == "Gravekeeper's Spy"), None)
-            if spy and len(pl.mon) < 5: pl.deck.remove(spy); spy.pos = "DEF"; pl.mon.append(spy)
+            if spy and len(pl.mon) < 5: pl.deck.remove(spy); self.special(pl, spy, "DEF")
         elif c.name == "Dekoichi the Battlechanted Locomotive": self.draw(pl)
         elif c.name == "Night Assailant" and op.mon: self.destroy(op, max(op.mon, key=lambda x: x.atk))
         elif c.name == "Morphing Jar":
@@ -461,6 +655,7 @@ class Game:
         op = self.opp(pl)
         if c in pl.st and c.fd and c.kind == "Trap" and c.set_turn >= self.turn: return
         if c.kind == "Trap" and self.traps_locked(): return
+        if c in pl.st and self.is_locked(c): return
         n = c.name
         if c in pl.hand: pl.hand.remove(c)
         if c in pl.st: pl.st.remove(c)
@@ -470,11 +665,28 @@ class Game:
         elif n == "Upstart Goblin": pl.obligations.append(("draw", 1)); op.lp += 1000
         elif n == "Giant Trunade":
             for who in (pl, op):
-                for x in who.st[:]: who.st.remove(x); x.fd = False; who.hand.append(x)
+                for x in who.st[:]: self.bounce(who, x)
         elif n in ("Mind Control", "Brain Control") and op.mon and len(pl.mon) < 5:
             if n == "Brain Control": self.damage(pl, 800)
             ts = [x for x in op.mon if not x.fd] or op.mon
-            t = max(ts, key=lambda x: x.atk); op.mon.remove(t); t.fd, t.pos, t.attacked = False, "ATK", False; pl.mon.append(t); pl.borrowed.append((t, "return"))
+            t = max(ts, key=lambda x: x.atk); op.mon.remove(t); t.fd, t.pos, t.attacked, t.hit = False, "ATK", False, []; pl.mon.append(t); pl.borrowed.append((t, "return"))
+        elif n == "Nightmare Wheel":
+            up = [x for x in op.mon if not x.fd and not x.token]
+            if up: t = max(up, key=lambda x: self.eff_atk(op, x)); c.link, t.locked = t, c
+        elif n == "Xing Zhen Hu":
+            fd = [x for x in op.st if x.fd and x.locked is None][:2]
+            if fd:
+                for x in fd: x.locked = c
+                c.link = fd[0]
+        elif n == "Reckless Greed": pl.obligations.append(("draw", 2)); pl.skip_draw += 2
+        elif n == "Monster Reincarnation" and pl.hand:
+            ms = [x for x in pl.gy if x.kind == "Monster"]
+            if ms:
+                self.to_gy(pl, min(pl.hand, key=lambda x: (x.name in DRAW_SPELLS, x.atk)))
+                best = max(ms, key=lambda x: (x.name in SPECIAL, x.atk)); pl.gy.remove(best); pl.hand.append(best)
+        elif n == "Toon Table of Contents":
+            toons = [x for x in pl.deck if x.name.startswith("Toon")]
+            if toons: t = max(toons, key=lambda x: (x.name == "Toon Table of Contents", x.atk)); pl.deck.remove(t); pl.hand.append(t)
         elif n == "Smashing Ground":
             up = [x for x in op.mon if not x.fd]
             if up: self.destroy(op, max(up, key=lambda x: x.def_))
@@ -490,7 +702,7 @@ class Game:
         elif n == "Phoenix Wing Wind Blast" and pl.hand and (op.mon or op.st):
             self.to_gy(pl, min(pl.hand, key=lambda x: (x.name in DRAW_SPELLS, x.atk)))
             t = max(op.mon, key=lambda x: x.atk) if op.mon else op.st[0]
-            (op.mon if t in op.mon else op.st).remove(t); t.fd, t.pos = False, "ATK"; op.deck.append(t)
+            self.unlink(t); (op.mon if t in op.mon else op.st).remove(t); t.fd, t.pos, t.hit = False, "ATK", []; self.p[t.owner].deck.append(t)
         elif n in ("Just Desserts", "Secret Barrel", "Ceasefire"):
             self.damage(op, {"Just Desserts": 500 * len(op.mon), "Secret Barrel": 200 * (len(op.hand) + len(op.mon) + len(op.st)),
                              "Ceasefire": 500 * sum(1 for p2 in self.p for x in p2.mon if x.fd or not x.token)}[n])
@@ -508,16 +720,16 @@ class Game:
             while pl.deck and len(pl.mon) < 5:
                 x = pl.deck.pop()
                 if x.kind == "Monster" and "Ritual" not in (self.cards.get(x.name) or {}).get("type", "") and "Fusion" not in (self.cards.get(x.name) or {}).get("type", ""):
-                    x.fd, x.pos = False, "ATK"; pl.mon.append(x); break
+                    self.special(pl, x); break
                 pl.gy.append(x)
         elif n == "Last Will" and len(pl.mon) < 5:
             opts = [x for x in pl.deck if x.kind == "Monster" and x.atk <= 1500]
             if opts and pl.lost_monster:
-                best = max(opts, key=lambda x: (x.name in FLIP or x.name in FLOATERS, x.atk)); pl.deck.remove(best); best.fd, best.pos = False, "DEF"; pl.mon.append(best)
+                best = max(opts, key=lambda x: (x.name in FLIP or x.name in FLOATERS, x.atk)); pl.deck.remove(best); self.special(pl, best, "DEF")
         elif n in ("Dimension Fusion", "Return from the Different Dimension"):
             self.damage(pl, 2000 if n == "Dimension Fusion" else pl.lp // 2)
             for x in sorted([x for x in pl.ban if x.kind == "Monster"], key=lambda x: -x.atk)[:min(2 if n == "Dimension Fusion" else 5, 5 - len(pl.mon))]:
-                pl.ban.remove(x); x.fd, x.pos, x.attacked = False, "ATK", False; pl.mon.append(x)
+                pl.ban.remove(x); self.special(pl, x)
                 if n == "Return from the Different Dimension": pl.borrowed.append((x, "banish"))
         elif n == "United We Stand" and pl.mon:
             max(pl.mon, key=lambda x: x.atk).atk += 800 * len(pl.mon)
@@ -539,16 +751,22 @@ class Game:
             fd = [x for x in op.mon if x.fd]
             if fd: self.destroy(op, self.rnd.choice(fd), banish=True)
         elif n in ("Snatch Steal", "Creature Swap") and op.mon and len(pl.mon) < 5:
-            t = max(op.mon, key=lambda x: x.atk); op.mon.remove(t); t.fd, t.pos = False, "ATK"; pl.mon.append(t)
-            if n == "Creature Swap" and pl.mon[:-1]:
-                mine = min(pl.mon[:-1], key=lambda x: x.atk); pl.mon.remove(mine); op.mon.append(mine)
-        elif n == "Metamorphosis" and pl.mon and op.mon:
-            self.to_gy(pl, min(pl.mon, key=lambda x: x.atk)); self.destroy(op, max(op.mon, key=lambda x: x.atk))
+            ts = [x for x in op.mon if not x.token] if n == "Snatch Steal" else op.mon
+            if ts:
+                t = max(ts, key=lambda x: x.atk); self.unlink(t); op.mon.remove(t); t.fd, t.pos, t.hit = False, "ATK", []; pl.mon.append(t)
+                if n == "Snatch Steal": c.link, t.link = t, c
+                if n == "Creature Swap" and pl.mon[:-1]:
+                    mine = min(pl.mon[:-1], key=lambda x: x.atk); self.unlink(mine); pl.mon.remove(mine); mine.hit = []; op.mon.append(mine)
+        elif n == "Metamorphosis" and any(x.level == 1 or x.token for x in pl.mon):
+            # Tribute a level 1 monster (usually a Sheep Token) for Thousand-Eyes Restrict, which absorbs their best monster.
+            self.to_gy(pl, min([x for x in pl.mon if x.level == 1 or x.token], key=lambda x: (not x.token, x.atk)))
+            ter = self.make(TER); ter.owner = self.p.index(pl); self.special(pl, ter); self.absorb(pl, ter)
         elif n in ("Premature Burial", "Call of the Haunted"):
             ms = [x for x in pl.gy if x.kind == "Monster"]
             if ms and len(pl.mon) < 5:
                 if n == "Premature Burial": self.damage(pl, 800)
-                best = max(ms, key=lambda x: x.atk); pl.gy.remove(best); best.fd, best.pos = False, "ATK"; pl.mon.append(best)
+                best = max(ms, key=lambda x: x.atk); pl.gy.remove(best); self.special(pl, best)
+                if best in pl.mon: c.link, best.link = best, c
         elif n == "Reinforcement of the Army":
             ws = [x for x in pl.deck if x.mtype == "Warrior" and x.level <= 4]
             if ws: best = max(ws, key=lambda x: (x.name == "Exiled Force" and bool(op.mon), x.atk)); pl.deck.remove(best); pl.hand.append(best)
@@ -556,7 +774,7 @@ class Game:
             for _ in range(min(4, 5 - len(pl.mon))):
                 t = Card("t" + str(self.rnd.random())[2:9], "Sheep Token", None); t.pos = "DEF"; pl.mon.append(t)
         elif n == "Book of Moon" and op.mon:
-            t = max(op.mon, key=lambda x: x.atk); t.fd, t.pos = True, "DEF"
+            self.flip_down(max(op.mon, key=lambda x: x.atk))
         elif n == "Trap Dustshoot" and len(op.hand) >= 4:
             ms = [x for x in op.hand if x.kind == "Monster"]
             if ms: x = self.rnd.choice(ms); op.hand.remove(x); op.deck.insert(0, x)
@@ -565,13 +783,14 @@ class Game:
             if n == "Ring of Destruction": self.damage(pl, t.atk); self.damage(op, t.atk)
             if n == "Raigeki Break" and pl.hand: self.to_gy(pl, min(pl.hand, key=lambda x: x.atk))
             self.destroy(op, t)
-        if n in CONTINUOUS and len(pl.st) < 5: pl.st.append(c)
-        elif n not in ("Premature Burial", "Call of the Haunted"): pl.gy.append(c)
+        # Continuous cards stay on the field; a linked one only if it found something to tie to.
+        if n in CONTINUOUS and len(pl.st) < 5 and (n not in LINKED or c.link is not None): pl.st.append(c)
+        else: self.unlink(c); pl.gy.append(c)
 
     # ---------- The defending player's traps, with fixed habits ----------
     def ready(self, pl, names):
         locked = self.traps_locked()
-        return [x for x in pl.st if x.fd and x.name in names and (x.kind == "Spell" or (x.set_turn < self.turn and not locked))]
+        return [x for x in pl.st if x.fd and x.name in names and not self.is_locked(x) and (x.kind == "Spell" or (x.set_turn < self.turn and not locked))]
 
     def respond(self, pl, event, c):
         """pl may answer the other player's attack, summon, spell or draw. Returns True if c was stopped."""
@@ -587,7 +806,7 @@ class Game:
             one = self.ready(pl, ATK_TRAPS - {"Mirror Force"})
             if one and r < 0.75 and self.eff_atk(op, c) >= 1400:
                 t = one[0]; use(t)
-                if t.name == "Compulsory Evacuation Device": op.mon.remove(c); op.hand.append(c)
+                if t.name == "Compulsory Evacuation Device": self.bounce(op, c)
                 elif t.name == "Magic Cylinder": self.damage(op, self.eff_atk(op, c))
                 else:
                     if t.name == "Ring of Destruction": self.damage(pl, c.atk); self.damage(op, c.atk)
@@ -596,7 +815,7 @@ class Game:
             goat = self.ready(pl, {"Scapegoat", "Book of Moon"})
             if goat and r < 0.6 and self.eff_atk(op, c) >= 1500:
                 g = goat[0]; use(g)
-                if g.name == "Book of Moon": c.fd, c.pos = True, "DEF"; return True
+                if g.name == "Book of Moon": self.flip_down(c); return True
                 for _ in range(min(4, 5 - len(pl.mon))):
                     t = Card("t" + str(self.rnd.random())[2:9], "Sheep Token", None); t.pos = "DEF"; pl.mon.append(t)
                 return True
@@ -615,8 +834,8 @@ class Game:
                 elif t.name == "Phoenix Wing Wind Blast":
                     if not pl.hand: pl.st.append(t); pl.gy.remove(t); t.fd = True; return False
                     self.to_gy(pl, min(pl.hand, key=lambda x: (x.name in DRAW_SPELLS, x.atk)))
-                    op.mon.remove(c); c.fd, c.pos = False, "ATK"; op.deck.append(c)
-                else: op.mon.remove(c); op.hand.append(c)
+                    self.unlink(c); op.mon.remove(c); c.fd, c.pos = False, "ATK"; self.p[c.owner].deck.append(c)
+                else: self.bounce(op, c)
                 return True
         elif event == "spell":
             sj = self.ready(pl, {"Solemn Judgment"})
@@ -629,19 +848,17 @@ class Game:
 
     def attack(self, pl, a, target_uid):
         op = self.opp(pl)
-        if a.attacked or a.fd or a.pos != "ATK" or self.phase != "BP": return
-        if pl.no_attack_turns or (a.level >= 4 and self.face_up(NO_BIG_ATTACKS)): return
-        a.attacked = True
+        t = next((x for x in op.mon if x.uid == target_uid), None) if target_uid is not None else None
+        if target_uid is not None and not t: return
+        if not self.can_attack(pl, a, t): return
+        a.attacked = True; a.hit.append("direct" if t is None else t.uid)
         if a.name == "Jirai Gumo" and self.rnd.random() < 0.5: self.damage(pl, pl.lp - pl.lp // 2)
         if self.respond(op, "attack", a) or a not in pl.mon: return
         atk = self.eff_atk(pl, a)
-        if target_uid is None:
-            if op.mon: return
+        if t is None:
             self.damage(op, atk); self.on_damage(pl, a)
-            if a.name == "Don Zaloog" and op.hand: self.to_gy(op, self.rnd.choice(op.hand))
+            if a.name in ("Don Zaloog", "Spirit Reaper") and op.hand: self.to_gy(op, self.rnd.choice(op.hand))
             return
-        t = next((x for x in op.mon if x.uid == target_uid), None)
-        if not t: return
         was_fd = t.fd
         if t.fd:
             t.fd = False
@@ -665,6 +882,8 @@ class Game:
                 self.battle_destroy(op, t)
             elif atk < d: self.damage(pl, d - atk)
         if a.name == "Goblin Attack Force" and a in pl.mon: a.pos = "DEF"
+        # Zombyra loses 200 ATK for every monster it destroys.
+        if a.name == "Zombyra the Dark" and a in pl.mon and t not in op.mon: a.atk = max(0, a.atk - 200)
 
     def on_damage(self, pl, a):
         """What happens when a monster deals battle damage."""
@@ -698,11 +917,15 @@ def scripted(game, pl, cands):
     if ph in ("SP", "EP"): return "global|Enter M1" if ph == "SP" else "global|End turn"
     if ph == "M1" or ph == "M2":
         hand_names = Counter(c.name for c in pl.hand)
-        for n in ("Pot of Greed", "Graceful Charity", "Upstart Goblin"):
+        for n in ("Pot of Greed", "Graceful Charity", "Upstart Goblin", "Toon Table of Contents"):
             k = pick("Activate ST", lambda c, n=n: c.name == n and c in pl.hand)
             if k: return k
         k = pick("Activate ST", lambda c: c.name == "Jar of Greed" and c in pl.st and c.set_turn < game.turn)
         if k: return k
+        # Monster Reincarnation: trade a spare card for a Chaos monster or a big body in the graveyard.
+        if len(pl.hand) >= 2 and any(x.kind == "Monster" and (x.name in SPECIAL or x.atk >= 2000) for x in pl.gy):
+            k = pick("Activate ST", lambda c: c.name == "Monster Reincarnation" and c in pl.hand)
+            if k: return k
         if hand_names["Thunder Dragon"] and any(x.name == "Thunder Dragon" for x in pl.deck):
             k = pick("To GY", lambda c: c.name == "Thunder Dragon" and c in pl.hand)
             if k: return k
@@ -724,9 +947,13 @@ def scripted(game, pl, cands):
             if any(x.fd for x in op.mon):
                 k = pick("Activate ST", lambda c: c.name == "Nobleman of Crossout")
                 if k: return k
+            # Scapegoat to make the Sheep Token Metamorphosis needs.
+            if strong.atk >= 1500 and not LEVEL1(pl) and len(pl.mon) <= 1 and len(pl.st) <= 3 and any(c.name == "Metamorphosis" for c in pl.hand):
+                k = pick("Activate ST", lambda c: c.name == "Scapegoat")
+                if k: return k
             if not strong.fd and strong.atk >= 1500:
                 for n in sorted(STEALS):
-                    k = pick("Activate ST", lambda c, n=n: c.name == n and c in pl.hand and (n != "Metamorphosis" or pl.mon))
+                    k = pick("Activate ST", lambda c, n=n: c.name == n and c in pl.hand and (n != "Metamorphosis" or LEVEL1(pl)))
                     if k: return k
             if sum(not x.fd for x in op.mon) >= 2:
                 k = pick("Activate ST", lambda c: c.name == "Lightning Vortex" and len(pl.hand) >= 2)
@@ -741,7 +968,10 @@ def scripted(game, pl, cands):
         k = pick("Activate ST", lambda c: c in pl.st and c.fd and c.set_turn < game.turn and (
             (c.name == "Just Desserts" and len(op.mon) >= 2) or (c.name == "Secret Barrel" and len(op.hand) + len(op.mon) + len(op.st) >= 5) or
             (c.name == "Ojama Trio" and len(op.mon) <= 2) or c.name == "Time Seal" or
-            (c.name == "Royal Decree" and len(op.st) >= 2) or (c.name in NO_BIG_ATTACKS and any(x.level >= 4 for x in op.mon))))
+            (c.name == "Royal Decree" and len(op.st) >= 2) or (c.name in NO_BIG_ATTACKS and any(x.level >= 4 for x in op.mon)) or
+            (c.name == "Nightmare Wheel" and any(not x.fd and not x.token and x.atk >= 1500 for x in op.mon)) or
+            (c.name == "Xing Zhen Hu" and sum(1 for x in op.st if x.fd and x.locked is None) >= 2) or
+            (c.name == "Reckless Greed" and len(pl.hand) <= 3)))
         if k: return k
         if sum(1 for x in pl.ban if x.kind == "Monster") >= 2 and pl.lp > 4000:
             k = pick("Activate ST", lambda c: c.name in ("Dimension Fusion", "Return from the Different Dimension") and (c in pl.hand or c.set_turn < game.turn))
@@ -758,6 +988,22 @@ def scripted(game, pl, cands):
             if len(pl.hand) == 1:
                 k = pick("SS ATK", lambda c: c.name == "Swift Gaia the Fierce Knight")
                 if k: return k
+            if any(x.attr == "EARTH" and x.kind == "Monster" for x in pl.gy):
+                k = pick("SS ATK", lambda c: c.name == "Gigantes")
+                if k: return k
+            best_up = max([0] + [game.eff_atk(op, x) for x in op.mon if not x.fd])
+            if pl.summons == 0:
+                # Cyber-Stein when the dragon finishes them; Tsukuyomi to turn their big monster face-down;
+                # Rescue Cat for two attackers into an open field.
+                if pl.lp > 5000 and game.stein_worth_it(pl):
+                    k = pick("Normal Summon", lambda c: c.name == "Cyber-Stein")
+                    if k: return k
+                if best_up >= 1900 and best_up > max([0] + [game.eff_atk(pl, x) for x in pl.mon if not x.fd]):
+                    k = pick("Normal Summon", lambda c: c.name == "Tsukuyomi")
+                    if k: return k
+                if not op.mon and sum(1 for x in pl.deck if x.mtype == "Beast" and x.level <= 3) >= 2:
+                    k = pick("Normal Summon", lambda c: c.name == "Rescue Cat")
+                    if k: return k
             k = pick("Activate ST", lambda c: c.name in ("Reinforcement of the Army", "Reasoning") or (c.name == "Monster Gate" and any(x.atk < 1000 for x in pl.mon)))
             if k: return k
             if pl.summons == 0:
@@ -799,14 +1045,15 @@ def scripted(game, pl, cands):
             if flips: return f"card|{max(flips, key=lambda c: (c.name in FLIP, c.def_)).uid}|Set monster"
         return "global|End turn" if ph == "M2" else "global|Enter BP" if game.turn > 1 else "global|End turn"
     if ph == "BP":
-        attackers = [c for c in pl.mon if c.pos == "ATK" and not c.fd and not c.attacked]
+        attackers = [c for c in pl.mon if c.pos == "ATK" and not c.fd and game.attacks_left(c) > 0]
         for a in sorted(attackers, key=lambda c: -game.eff_atk(pl, c)):
             if not op.mon:
-                return f"card|{a.uid}|Attack directly"
+                if game.can_attack(pl, a): return f"card|{a.uid}|Attack directly"
+                continue
             atk = game.eff_atk(pl, a)
-            wins = [t for t in op.mon if not t.fd and ((t.pos == "ATK" and atk > game.eff_atk(op, t)) or (t.pos == "DEF" and atk > t.def_))]
+            wins = [t for t in op.mon if not t.fd and game.can_attack(pl, a, t) and ((t.pos == "ATK" and atk > game.eff_atk(op, t)) or (t.pos == "DEF" and atk > t.def_))]
             if wins: return f"card|{a.uid}|Attack|{max(wins, key=lambda t: t.atk).uid}"
-            fds = [t for t in op.mon if t.fd]
+            fds = [t for t in op.mon if t.fd and game.can_attack(pl, a, t)]
             if fds and atk >= 1600: return f"card|{a.uid}|Attack|{fds[0].uid}"
         return "global|Enter M2"
     return "global|End turn"
@@ -828,27 +1075,47 @@ def legal(game, pl, cands):
         if k.startswith("global|"):
             if (ph == "M1" and p == "Enter BP" and game.turn > 1) or (ph == "BP" and p == "Enter M2") or p == "End turn": ok.append(k)
         elif p in ("Normal Summon", "Set monster"):
-            need = 2 if c.level >= 7 else 1 if c.level >= 5 else 0
-            if ph in ("M1", "M2") and pl.summons == 0 and len([x for x in pl.mon if not x.token or need == 0]) >= need and "Fusion" not in (game.cards.get(c.name) or {}).get("type", ""): ok.append(k)
+            need = tributes_for(c)
+            if ph in ("M1", "M2") and pl.summons == 0 and len([x for x in pl.mon if not x.token]) >= need and "Fusion" not in (game.cards.get(c.name) or {}).get("type", ""): ok.append(k)
         elif p == "SS ATK":
             if ph in ("M1", "M2") and (c.name in ("Black Luster Soldier - Envoy of the Beginning", "Chaos Sorcerer") and any(x.attr == "LIGHT" for x in pl.gy) and any(x.attr == "DARK" for x in pl.gy)
-                                       or c.name == "Swift Gaia the Fierce Knight" and len(pl.hand) == 1): ok.append(k)
+                                       or c.name == "Swift Gaia the Fierce Knight" and len(pl.hand) == 1
+                                       or c.name == "Gigantes" and any(x.attr == "EARTH" and x.kind == "Monster" for x in pl.gy)): ok.append(k)
         elif p == "Flip Summon":
             if ph in ("M1", "M2") and c.set_turn < game.turn: ok.append(k)
         elif p in ("To DEF", "To ATK"):
-            if ph in ("M1", "M2") and c.set_turn < game.turn and not c.attacked: ok.append(k)
+            if ph in ("M1", "M2") and c.set_turn < game.turn and not c.attacked and not game.is_locked(c): ok.append(k)
         elif p == "Activate ST":
-            if ph in ("M1", "M2") and (c in pl.hand and c.kind == "Spell" or c in pl.st and c.fd and (c.kind == "Spell" or c.set_turn < game.turn)): ok.append(k)
+            if ph in ("M1", "M2") and (c in pl.hand and c.kind == "Spell" or c in pl.st and c.fd and not game.is_locked(c) and (c.kind == "Spell" or c.set_turn < game.turn)) \
+                    and (c.name != "Metamorphosis" or LEVEL1(pl)): ok.append(k)
         elif p == "Set ST":
             if ph in ("M1", "M2"): ok.append(k)
         elif p in ("Attack", "Attack directly"):
-            if ph == "BP" and not c.attacked and (p == "Attack" or not op.mon): ok.append(k)
+            if game.can_attack(pl, c, t): ok.append(k)
         elif p == "To GY":
             if ph in ("M1", "M2") and c in pl.hand and c.name == "Thunder Dragon": ok.append(k)
     return ok or ["global|End turn"]
 
 # ---------- A look-ahead teacher ----------
-def rollout_player(rollouts, horizon, seed, max_cands=8):
+# The order plays are tried in when there are more than the teacher can afford to look at: the plays that
+# change the game most first, so a hand full of monsters can't push attacking, setting a trap or ending the
+# turn off the list.
+TRY_ORDER = {p: i for i, p in enumerate(["Activate ST", "Flip Summon", "Attack", "Attack directly", "SS ATK", "Normal Summon", "End turn",
+                                           "Enter BP", "Enter M2", "Set monster", "Set ST", "To DEF", "To ATK", "SS DEF", "To GY"])}
+def teacher_candidates(game, pl, cands, max_cands):
+    """The distinct legal plays worth looking ahead on, the scripted player's pick first. Identical copies of a
+    card are the same play, so one of each is kept; the rest share its value (see `same`)."""
+    keys = legal(game, pl, cands)
+    first = scripted(game, pl, cands)
+    info = {k: (p, c.name if c else None, t.name if t and not t.fd else t.uid if t else None) for k, p, c, t in cands}
+    ordered = ([first] if first in keys else []) + sorted(keys, key=lambda k: (TRY_ORDER.get(info[k][0], 99), keys.index(k)))
+    seen, uniq, same = set(), [], {}
+    for k in ordered:
+        if info[k] in seen: same.setdefault(info[k], []).append(k); continue
+        seen.add(info[k]); uniq.append(k); same[info[k]] = [k]
+    return uniq[:max_cands], same, info
+
+def rollout_player(rollouts, horizon, seed, max_cands=14):
     """Tries each legal play in copies of the game (hidden cards dealt again each time), plays every copy on
     with the scripted player for `horizon` more turns, and makes the play that does best on average. It's
     stronger than the scripted player, and a model trained on its choices learns from that.
@@ -860,14 +1127,7 @@ def rollout_player(rollouts, horizon, seed, max_cands=8):
         play.values = None
         keys = legal(game, pl, cands)
         if len(keys) == 1: return keys[0]
-        first = scripted(game, pl, cands)
-        # Identical copies of a card are the same play: keep one of each.
-        seen, uniq, same = set(), [], {}
-        info = {k: (p, c.name if c else None, t.name if t and not t.fd else t.uid if t else None) for k, p, c, t in cands}
-        for k in ([first] if first in keys else []) + keys:
-            if info[k] in seen: same.setdefault(info[k], []).append(k); continue
-            seen.add(info[k]); uniq.append(k); same[info[k]] = [k]
-        uniq = uniq[:max_cands]
+        uniq, same, info = teacher_candidates(game, pl, cands, max_cands)
         seeds = [rnd.random() for _ in range(rollouts)]
         vals = {}
         for k in uniq:
@@ -928,7 +1188,7 @@ def make_player(kind, a, seed, epsilon=0.0):
 _W = {}
 def _init(a):
     _W["a"], _W["cards"] = a, load_cards()
-    _W["decks"] = load_fl_decks(a.fl) if a.fl else load_decks(a.decks)
+    _W["decks"] = load_fl_decks(a.fl or 10**6, a.type) if a.fl or a.type else load_decks(a.decks)
 
 def _game(g):
     """One game, in a worker: returns its records, the winner's deck, and for --eval how the tested side did."""
@@ -952,6 +1212,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--games", type=int, default=600)
     ap.add_argument("--decks", nargs="*", help="deck file names in tools/decks to use (default: all)")
+    ap.add_argument("--type", metavar="DECK TYPE", help='deal only Format Library decks of this type, so every game is a mirror match: --type "Goat Control". '
+                    "With --fl N, the N most recent of them; otherwise all")
     ap.add_argument("--fl", type=int, default=0, metavar="N",
                     help="deal from the N most recent Format Library topping decks instead of tools/decks (needs tools/train_decks.py run once)")
     ap.add_argument("--teacher", default="scripted", choices=["scripted", "rollout"],
@@ -960,7 +1222,8 @@ def main():
     ap.add_argument("--epsilon", type=float, default=0.0, help="how often the actor makes a random legal play instead, 0 to 1")
     ap.add_argument("--opponent", default="scripted", help="who --eval plays against: scripted, rollout, or a policy.json")
     ap.add_argument("--rollouts", type=int, default=6, help="look-ahead copies per candidate play (rollout teacher)")
-    ap.add_argument("--horizon", type=int, default=3, help="turns each look-ahead copy plays on (rollout teacher)")
+    ap.add_argument("--horizon", type=int, default=2, help="turns each look-ahead copy plays on (rollout teacher). 2 beat 3 and 5 clearly: "
+                    "longer rollouts by the scripted player add more noise than foresight")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     ap.add_argument("-o", "--out", default="sim-training.json")
     ap.add_argument("--model", help="a trained policy.json to play against the scripted player")
