@@ -27,15 +27,20 @@ jobs:
         # Files sit at the top of the zip, so unzipping gives a single folder with manifest.json inside.
         run: cd extension && zip -r -X ../ygo-duel-odds.zip . -x ".*" -x "*/.*"
 
+      # The recommended Goat model ships beside the extension as goat-model.json, so the README can link to
+      # releases/latest/download/goat-model.json. Point this at a newer file in models/ to change it.
+      - name: Copy the recommended model
+        run: cp models/goat-mix4.json goat-model.json
+
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" ygo-duel-odds.zip --clobber
+            gh release upload "$GITHUB_REF_NAME" ygo-duel-odds.zip goat-model.json --clobber
           else
-            gh release create "$GITHUB_REF_NAME" ygo-duel-odds.zip --title "YGO Duel Odds $GITHUB_REF_NAME" \
-              --notes "Download **ygo-duel-odds.zip** below, then follow the install steps in the [README](https://github.com/Kuriboh493/ygo-duel-odds#install-it-about-5-minutes)."
+            gh release create "$GITHUB_REF_NAME" ygo-duel-odds.zip goat-model.json --title "YGO Duel Odds $GITHUB_REF_NAME" \
+              --notes "Download **ygo-duel-odds.zip** below, then follow the install steps in the [README](https://github.com/Kuriboh493/ygo-duel-odds#install-it-about-5-minutes). **goat-model.json** is the trained Goat model to load in the Auto tab for auto-play."
           fi
 
   safari:

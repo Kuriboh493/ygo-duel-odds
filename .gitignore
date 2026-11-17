@@ -5,3 +5,6 @@ build/
 policy.json
 ygo-training-data*.json
 sim-training.json
+.venv/
+tools/aws/config.env
+.DS_Store

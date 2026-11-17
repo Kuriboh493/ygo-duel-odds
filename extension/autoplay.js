@@ -236,7 +236,7 @@ function aiSync(){
   if (!settings.botAuto) aiNote("off", "Turn it on and the learned model plays whenever it's allowed to: in a Solo Mode duel, or on your bot account.");
 }
 function aiSet(on, why){
-  if (on && !mlModel){ aiSync(); return toast("Load a trained model first, under Learning. models/goat-starter.json is a good start."); }
+  if (on && !mlModel){ aiSync(); return toast("Load a trained model first, under Learning. goat-model.json from the latest release is a good start."); }
   settings.botAuto = on;
   // Once the bot checklist is confirmed, the switch turns bot account mode on too, so logging in as the bot is enough.
   if (on && settings.botAck && !settings.bot){ settings.bot = true; $("bot-on").checked = true; }

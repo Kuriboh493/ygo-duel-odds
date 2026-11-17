@@ -17,12 +17,13 @@ It can also **play for you**. Flip the **AI takes over** switch in the **Auto** 
 **Turn on the AI in 3 steps:**
 
 1. [Install the extension](#install-it-about-5-minutes) and open the panel on DuelingBook.
-2. In the **Auto** tab, under **Learning**, press **Load a trained model** and pick `models/goat-starter.json` from the [full project download](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip).
+2. Download the trained model, [`goat-model.json`](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/goat-model.json). In the **Auto** tab, under **Learning**, press **Load a trained model** and pick it.
 3. Start a Solo Mode duel and flip **AI takes over** to On. To have it play people, set up [bot duels](#bot-account-playing-people-who-choose-to-play-a-bot) first.
 
 Flip it off, or press **Stop**, to take control back. [More about the switch](#the-ai-takes-over-switch).
 
 - [Install it (about 5 minutes)](#install-it-about-5-minutes)
+  - [Updating](#updating)
 - [Use it](#use-it)
 - [Turning it on partway through a duel](#turning-it-on-partway-through-a-duel)
 - [Auto-play](#auto-play)
@@ -33,6 +34,7 @@ Flip it off, or press **Stop**, to take control back. [More about the switch](#t
 - [Bot account: playing people who choose to play a bot](#bot-account-playing-people-who-choose-to-play-a-bot)
 - [Something not working?](#something-not-working)
 - [What it can and can't see](#what-it-can-and-cant-see)
+- [MTG Arena odds](#mtg-arena-odds)
 - [For developers](#for-developers)
 
 ## Install it (about 5 minutes)
@@ -80,6 +82,10 @@ It works in **Chrome, Edge, Brave, Opera, Vivaldi**, **Firefox** and **Safari** 
 4. Pick **Goat** or **Edison** from the menu in the top-right of the panel.
 
 That's it. Start or watch a duel and the panel fills in by itself.
+
+### Updating
+
+When a new version comes out, download **[ygo-duel-odds.zip](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/ygo-duel-odds.zip)** again and unzip it over your old `ygo-duel-odds` folder, replacing the files. Then press the reload arrow on the extension's card in `chrome://extensions` (or your browser's equivalent), and reload DuelingBook. Your settings and loaded model stay. To use a newer model, download [`goat-model.json`](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/goat-model.json) again and load it under **Learning**.
 
 ### Safari on a Mac
 
@@ -193,7 +199,7 @@ The switch at the top of the **Auto** tab hands control to the AI. While it's on
 
 **Set it up once:**
 
-1. **Load a model.** In the **Auto** tab, under **Learning**, press **Load a trained model** and pick one. If you haven't trained your own yet, use the starter model, `models/goat-starter.json`, from the [full project download](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip). See [Teaching it to play like you](#teaching-it-to-play-like-you) to train one on your own duels. The model stays loaded until you remove it.
+1. **Load a model.** In the **Auto** tab, under **Learning**, press **Load a trained model** and pick one. If you haven't trained your own yet, download the ready-made model, [`goat-model.json`](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/goat-model.json). See [Teaching it to play like you](#teaching-it-to-play-like-you) to train one on your own duels. The model stays loaded until you remove it.
 2. **For bot duels only:** under **Bot account**, choose which account it plays on and tick the confirmations. See [Bot account](#bot-account-playing-people-who-choose-to-play-a-bot). Skip this if you only want it in Solo Mode.
 
 **Then, each time, flip the switch to On.** What happens next depends on where you are:
@@ -256,7 +262,7 @@ It takes a few seconds to a few minutes. When it finishes, it tells you how ofte
 
 **4. Load it.** Under **Learning**, press **Load a trained model** and pick `policy.json`. Then choose **Learned model** under **What it should do**, start a Solo Mode duel, and press **Start**.
 
-**No recordings yet?** Load the ready-made starter model, `models/goat-starter.json`, from the [full project download](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip). It was trained on simulated games between real tournament decks, taught by a player that looks ahead (see below). In 1,000 test games against the scripted player it won 51% and lost 46%, with 3% reaching the turn limit. Against the look-ahead teacher that taught it, it won 41%.
+**No recordings yet?** Load the ready-made model, [`goat-model.json`](https://github.com/Kuriboh493/ygo-duel-odds/releases/latest/download/goat-model.json). It's `models/goat-mix4.json` in the repository. It has a hidden layer and was trained on 875,000 decisions: real players' Goat replays from DuelingBook, games labelled by a player that looks ahead (see below), and 2,000 games where the previous model made the plays and the look-ahead player marked the best ones. It plays Goat Control best, since that's what its simulated games used. In 1,000 test games it beat `models/goat-candidate.json` 57% to 43%. Against the scripted player it won 50% of 300 games. The older `models/goat-starter.json` still works too.
 
 Or train your own from simulated games. `tools/sim_goat.py` deals games between Goat decks and writes every decision as training data. By default it uses four standard lists in `tools/decks/` (Chaos Control, Gumo Warrior, Warrior and Chaos Turbo from the 2026 World Championship season). With `--fl 400` it deals from the 400 most recent decks that placed in tournaments on Format Library instead, which `tools/train_decks.py` downloads.
 
@@ -276,6 +282,15 @@ A model only ever sees the positions its teacher gets into, so once you have a m
 python3 tools/sim_goat.py --fl 400 --teacher rollout --actor policy.json --epsilon 0.1 --games 600 -o dagger.json
 python3 tools/train_policy.py teacher.json dagger.json -o policy.json
 ```
+
+The default model is linear: it scores each play as a sum of feature weights, so it can't learn that two features matter together (this card, but only when the opponent has a face-down monster). `--hidden 32` adds a small neural network on top, one hidden layer of 32 units over the same features. It needs numpy, so set up a virtual environment once and train with its Python:
+
+```
+python3 -m venv .venv && .venv/bin/pip install numpy
+.venv/bin/python tools/train_policy.py teacher.json dagger.json --hidden 32 -o policy.json
+```
+
+The extension and `sim_goat.py` play these models without numpy. Only features seen in at least `--min-count` training candidates (20 by default) get a hidden-layer embedding, which keeps the file a few MB.
 
 A model trained on your own duels will play more like you. You can train on recorded duels and simulated games together.
 
@@ -439,12 +454,67 @@ It never reads the names of cards in your opponent's hand, or of face-down cards
 
 How the deck guess works: the extension learned what Goat and Edison decks look like from about 3,500 decklists that placed in tournaments, plus about 2,500 decklists people have posted online. Tournament decks count the most. During a duel, every card your opponent shows narrows down which of those decks they're likely playing. Decks you've faced before count too, and an earlier game against the same opponent counts the most.
 
+## MTG Arena odds
+
+The same kind of odds for **Magic: The Gathering Arena**: what your opponent might be holding, what they could cast with the mana they have open, their next draw, and which deck they're playing. It doesn't play for you.
+
+Arena is a desktop app, so this isn't a browser extension. It's a small program that reads the log file Arena writes on your computer, and shows the odds in a browser tab.
+
+### Run it
+
+1. **Turn on Arena's logs.** In Arena, open **Options**, then **Account**, and tick **Detailed Logs (Plugin Support)**. Restart Arena.
+2. **Get the project.** [Download it from GitHub](https://github.com/Kuriboh493/ygo-duel-odds/archive/refs/heads/main.zip) and unzip it. You need Python 3, which Macs and most Linux computers already have. On Windows, install it from [python.org](https://www.python.org/downloads/).
+3. **Start it.** Open a terminal in the `ygo-duel-odds-main` folder and run:
+
+   ```
+   python3 mtga/mtga_odds.py
+   ```
+
+   On Windows, use `python` instead of `python3`.
+4. A tab opens at `http://127.0.0.1:8765/`. Put it beside Arena and start a game. Everything fills in by itself, and you can start it mid-game because it reads the log from the beginning.
+
+To try it without Arena, play back a saved log: `python3 mtga/mtga_odds.py --replay path/to/Player.log`. If your log isn't in the usual place, such as with Steam on Linux, pass it with `--log path/to/Player.log`.
+
+### What it shows
+
+- **At a glance**: the chance they hold a counterspell, instant removal, a combat trick or a flash threat **that their open mana can pay for right now**, and a board wipe they could pay for next turn.
+- **Their hand**: how many lands they probably hold, and the cards they most likely have.
+- **Their next draw**: land versus spell, and the likeliest cards.
+- **What they didn't do**: it notices when your spell resolves or your attack connects while they have mana up and make no play, and when they miss a land drop. Each one lowers the odds of those cards, but only cards they could have paid for at that moment. Click an item to stop counting it.
+- **Deck**: the deck they're most likely playing, and a place to paste their list. Earlier games in the same match count the most.
+
+### Training a model on your plays
+
+Like the Yu-Gi-Oh! tool, it can learn from decisions. It reads what Arena offered you and what you chose, so it needs no extra setup beyond detailed logs.
+
+1. **Record.** Run `python3 mtga/mtga_odds.py --record` while you play. Your decisions are added to `~/.mtga-odds/decisions.jsonl`, with your own cards and what both players could see. Saved `Player.log` files also work as training data. Arena replaces that file each time it launches.
+2. **Train.** Run `python3 tools/train_mtga_policy.py ~/.mtga-odds/decisions.jsonl`. It tells you how often the model picks the play the player made, in games it didn't train on, and writes `policy.json`.
+3. **Use it.** Run `python3 mtga/mtga_odds.py --model policy.json`. The **Plays** tab ranks your options.
+
+The **Plays** tab only suggests. **It never plays or clicks for you, and it stays locked in games against people.** It works against Arena's built-in bot and in replays. Automating Arena isn't fair to opponents who think they're playing a person, and it could get your account banned.
+
+**Commander.** Arena's version of Commander is Brawl: two players, 25 life and no commander damage, in 60-card Standard or 100-card Historic. Records and the model understand the command zone and commander tax. The starter model, `models/mtga-starter.json`, was trained on 3,139 decisions from public logs, but only 31 of them are from Brawl, so treat its Brawl advice as a rough start and train on your own games. It copies choices, so its accuracy says nothing about how often it would win. Brawl has no deck data for odds, so paste their list if you have it.
+
+### What to expect
+
+- **Standard has the best odds.** Archetypes come from recent tournament decklists on [MTGTop8](https://www.mtgtop8.com/), mostly Magic Online and paper events, so the Arena ladder will differ. Rerun `tools/train_mtg_decks.py` every few weeks.
+- **Other formats start without deck data.** Explorer, Historic, Alchemy, Timeless, Brawl and Limited have no current archetypes. The threat tiles show **?** instead of a misleading 0%, and you still get land and spell odds and what they've shown. Pasting their list, or facing decks you've seen before, fills in the rest.
+- **Costs are simplified.** It uses each card's normal mana cost. Alternate costs, convoke, cost reducers and a creature's adventure half aren't modeled. Tags like "counterspell" are guessed from card text, so a few cards will be off.
+
+It only uses what you can see in the game: their hand and library sizes, public cards, and cards revealed to you. Arena's log also lists some of the opponent's options, and the tool deliberately never reads that part. It listens only on your own computer and never changes anything in Arena. Decks you've faced, with your opponents' screen names, are saved in `~/.mtga-odds/history.json` on your computer. Delete that file to clear them. Tournaments can have their own rules about helper tools, so check them before using it in an event.
+
+This is unofficial Fan Content, not approved or endorsed by Wizards of the Coast. Card data comes from [Scryfall](https://scryfall.com/).
+
 ## For developers
 
 ### What's in the repository
 
 | Path | What it is |
 |---|---|
+| `mtga/` | The MTG Arena odds tool: `mtga_odds.py` (log follower and local server), `tracker.py` (log parser), `odds.js` (model) and `panel.html`/`panel.js` (page). It reuses `extension/panel.css` and the fonts. |
+| `tools/build_mtg_cards.py`, `tools/train_mtg_decks.py` | Build `mtga/mtg-cards.js` from Scryfall and `mtga/mtg-decks.js` from MTGTop8. |
+| `mtga/decisions.py`, `mtga/policy.py`, `tools/train_mtga_policy.py`, `models/mtga-starter.json` | Decision records from Arena's log, the model's features and scoring, its trainer, and a model trained on public logs from [manasight-corpus](https://github.com/manasight/manasight-corpus). |
+| `tools/test_mtga.py` | Tests the parser on hand-written states and real, sanitized logs from [manasight-corpus](https://github.com/manasight/manasight-corpus), and the odds against exact math. |
 | `extension/` | The browser extension (Manifest V3: Chromium, Firefox 128+, and Safari through `tools/build_safari.sh`). |
 | `goat-odds.html`, `edison-odds.html` | The original single-page calculators. You log what the opponent does by hand. Open either in a browser, with `cards.js` in the same folder. Keyboard shortcuts: D draw, S set spell/trap, M set monster, E end turn, Z undo. |
 | `cards.js` | Card database built from the YGOPRODeck API. `extension/cards.js` is a copy. |
@@ -453,11 +523,13 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
 | `tools/make_icons.py` | Draws the toolbar icons. |
 | `tools/build_safari.sh` | Builds the Safari app with Xcode. The GitHub workflows run it on a macOS runner. |
 | `tools/train_policy.py` | Trains the auto-play model from recorded decisions. |
+| `tools/policy_mlp.py` | The hidden layer `train_policy.py --hidden` adds (needs numpy). |
 | `tools/test_features.py` | Checks that the Python and JavaScript copies of the model's features match. |
 | `tools/test_sim_goat.py` | Checks the simulator's rules on set-up positions: tributes, Spirits, equips, locks, multi-attacks. |
 | `tools/sim_goat.py` | A simplified Goat simulator that writes training decisions from a scripted player, and tests a trained model against that player. |
 | `tools/decks/` | The four standard decklists the simulator uses. Add more `.txt` lists in the same format and it uses them too. |
-| `models/goat-candidate.json` | The newest model, trained on 3,000 look-ahead-teacher games plus 2,000 where an earlier model made the plays (DAgger), with the simulator's fuller card rules. In 300 test games it won 53% against the scripted player and 48% against the starter model, within noise of the starter, so the starter stays the default for now. |
+| `models/goat-mix4.json` | The recommended model, shipped with each release as `goat-model.json`. A hidden layer of 32 units, trained on DuelingBook Goat replays, 1,000 look-ahead-teacher Goat Control games and 2,000 DAgger games with an earlier hidden-layer model making the plays. It won 57% of 1,000 games against `goat-candidate.json` and 50% of 300 against the scripted player. |
+| `models/goat-candidate.json` | An earlier model, trained on 3,000 look-ahead-teacher games plus 2,000 where an earlier model made the plays (DAgger), with the simulator's fuller card rules. In 300 test games it won 53% against the scripted player and 48% against the starter model, within noise of the starter, so the starter stays the default for now. |
 | `models/goat-starter.json` | A model trained on 3,200 simulated games between Format Library topping decks, labelled by the look-ahead teacher (a quarter of them with an earlier model making the plays), ready to load in the Auto tab. |
 
 ### How the extension works
@@ -488,7 +560,7 @@ How the deck guess works: the extension learned what Goat and Edison decks look 
 
     `tracker.js` stores the records in chunks, capped at 40,000.
   - `features.js` turns a record into features for each candidate: the play type crossed with the phase, zone, card name, hand size, board counts and life points, whether the attackers on board could finish them, plus battle outcome for attacks. `tools/train_policy.py` has a line-for-line Python copy, and `tools/test_features.py` checks the two agree using macOS's JavaScript engine. Records keep the raw situation rather than features, so the features can change without re-recording. Bump `FEATURES_VERSION` in both when they do.
-  - `train_policy.py` fits a linear softmax ranker over each decision's candidates with AdaGrad and L2, holding out 20% of duels. It streams the data file, so it can train on millions of decisions in a few hundred MB. Decisions that carry the teacher's value for each play (`cvals`) can be trained as soft targets, weighted by how clearly the best play won (`--soft-temp`, `--adv-scale`; both off by default, since they made models more passive). It reports top-1 and top-3 accuracy against random and most-common-play baselines, and on teacher data how often its pick was among the teacher's best, then refits on everything and exports the weights. No packages are needed.
+  - `train_policy.py` fits a linear softmax ranker over each decision's candidates with AdaGrad and L2, holding out 20% of duels. It streams the data file, so it can train on millions of decisions in a few hundred MB. Decisions that carry the teacher's value for each play (`cvals`) can be trained as soft targets, weighted by how clearly the best play won (`--soft-temp`, `--adv-scale`; both off by default, since they made models more passive). It reports top-1 and top-3 accuracy against random and most-common-play baselines, and on teacher data how often its pick was among the teacher's best, then refits on everything and exports the weights. No packages are needed. With `--hidden N`, `policy_mlp.py` adds one hidden layer of N ReLU units whose output is added to the linear score, trained with mini-batch AdaGrad in numpy on flat arrays of feature ids; the model JSON gains an `mlp` block (`b`, `v`, and an embedding per common feature) that `scoreCandidates` in `features.js` and `model_score` in `train_policy.py` both evaluate, and `tools/test_features.py` checks they agree.
   - `tools/sim_goat.py` simulates games with the lists in `tools/decks/`, or with `--fl N` the N most recent Format Library topping decks:
     - It models turns, tributes, battle and the effects of about a hundred and twenty of the most-played Goat cards, simplified. Cards it doesn't know play as vanilla. The cards it does know cover about 95% of the copies in Format Library's Goat decks.
     - The rules the model's values most depend on are kept right: tokens can't be tributed, Spirits return to the hand and Asura Priest attacks every monster, Premature Burial, Call of the Haunted and Snatch Steal stay tied to their monster so Heavy Storm and Trunade undo them, Nightmare Wheel and Xing Zhen Hu lock what they target, Sangan only searches from the field, Scapegoat into Metamorphosis makes a Thousand-Eyes Restrict that absorbs and locks, and a player who can't draw loses. `tools/test_sim_goat.py` checks these.
