@@ -630,7 +630,10 @@ class Game:
         elif c.name == "Gravekeeper's Spy":
             spy = next((x for x in pl.deck if x.name == "Gravekeeper's Spy"), None)
             if spy and len(pl.mon) < 5: pl.deck.remove(spy); self.special(pl, spy, "DEF")
-        elif c.name == "Dekoichi the Battlechanted Locomotive": self.draw(pl)
+        elif c.name == "Dekoichi the Battlechanted Locomotive":
+            # Your own Flip Summon leaves the draw to you, as DuelingBook does; flipped in battle, it's drawn for you.
+            if pl is self.p[self.active]: pl.obligations.append(("draw", 1))
+            else: self.draw(pl)
         elif c.name == "Night Assailant" and op.mon: self.destroy(op, max(op.mon, key=lambda x: x.atk))
         elif c.name == "Morphing Jar":
             for who in (pl, op):
@@ -1153,8 +1156,7 @@ def rollout_player(rollouts, horizon, seed, max_cands=14):
 # ---------- A learned model as a player, with the same guards as the extension ----------
 def model_player(model, epsilon=0.0, rnd=None):
     sys.path.insert(0, HERE)
-    from train_policy import featurize
-    w = model["weights"]
+    from train_policy import featurize, model_score
     state = {}
     rnd = rnd or random.Random(0)
     def play(game, pl, cands):
@@ -1165,9 +1167,8 @@ def model_player(model, epsilon=0.0, rnd=None):
         rec = game.build_record(pl, cands)
         scored = []
         for cand in rec["cands"]:
-            fs = featurize(rec, cand)
-            known = [f for f in fs if f in w]
-            if known: scored.append((sum(w[f] for f in known), cand["key"]))
+            sc, known = model_score(model, featurize(rec, cand))
+            if known: scored.append((sc, cand["key"]))
         for s, k in sorted(scored, reverse=True):
             # One attack per monster per turn, as in the extension.
             rk = "|".join(k.split("|")[:2]) + "|attack" if k.startswith("card|") and k.split("|")[2].startswith("Attack") else k

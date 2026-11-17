@@ -104,12 +104,21 @@ function featurize(rec, cand){
   return out;
 }
 // Scores every candidate with a trained model ({weights:{feature: weight}}) and returns them best first.
-// known counts the candidate's features the model has a weight for; 0 means it never saw a play like it.
+// A model from train_policy.py --hidden also has mlp: {b, v, emb:{feature: [numbers]}}, a hidden layer whose
+// output v . relu(b + sum of the features' embeddings) is added to the score (model_score in train_policy.py).
+// known counts the candidate's features the model has a weight or embedding for; 0 means it never saw a play like it.
 function scoreCandidates(model, rec){
-  const w = model.weights || {};
+  const w = model.weights || {}, mlp = model.mlp;
   return rec.cands.map((cand, i) => {
     let s = 0, known = 0;
-    for (const f of featurize(rec, cand)) if (f in w){ s += w[f]; known++; }
+    const z = mlp ? mlp.b.slice() : null;
+    for (const f of featurize(rec, cand)){
+      const inW = f in w, e = mlp && mlp.emb[f];
+      if (inW) s += w[f];
+      if (e) for (let k = 0; k < e.length; k++) z[k] += e[k];
+      if (inW || e) known++;
+    }
+    if (z) for (let k = 0; k < z.length; k++) if (z[k] > 0) s += mlp.v[k] * z[k];
     return {i, cand, score: s, known};
   }).sort((a, b) => b.score - a.score);
 }

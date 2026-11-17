@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MTG Arena Odds</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="panel.css">
+<link rel="stylesheet" href="panel-extra.css">
+</head>
+<body class="idle">
+<header class="topbar">
+  <div class="topbar-top">
+    <div class="brand"><h1><span id="title">Standard</span> Odds</h1></div>
+    <div class="controls">
+      <select class="fmt" id="format" aria-label="Format">
+        <option value="auto">Auto</option>
+        <option value="standard">Standard</option>
+        <option value="alchemy">Alchemy</option>
+        <option value="explorer">Explorer</option>
+        <option value="historic">Historic</option>
+        <option value="timeless">Timeless</option>
+        <option value="brawl">Brawl</option>
+        <option value="limited">Limited</option>
+      </select>
+    </div>
+  </div>
+  <div class="conn" id="connbox"><span class="dot" id="dot"></span><span id="conn">Connecting…</span></div>
+  <div class="status" id="status"></div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-odds" data-tab="odds" aria-controls="pane-odds">Odds</button>
+    <button role="tab" id="tab-deck" data-tab="deck" aria-controls="pane-deck">Deck</button>
+    <button role="tab" id="tab-log" data-tab="log" aria-controls="pane-log">Log</button>
+    <button role="tab" id="tab-plays" data-tab="plays" aria-controls="pane-plays">Plays</button>
+    <button role="tab" id="tab-settings" data-tab="settings" aria-controls="pane-settings">Settings</button>
+  </nav>
+</header>
+
+<main class="wrap">
+  <section class="pane" id="pane-odds" role="tabpanel" aria-labelledby="tab-odds">
+    <div id="banner"></div>
+    <section class="panel idle-card idle-only">
+      <h2>Waiting for a game</h2>
+      <ol class="steps">
+        <li>In Arena, open <b>Options</b>, then <b>Account</b>, and tick <b>Detailed Logs (Plugin Support)</b>. Restart Arena if it was off.</li>
+        <li>Start a game. Everything here fills in on its own.</li>
+      </ol>
+      <p class="hint">Until then, the next-draw odds below are for an average deck in the format.</p>
+    </section>
+    <section class="panel duel-only" aria-labelledby="h-th">
+      <h2 id="h-th">At a glance</h2>
+      <div class="threats" id="threats"></div>
+      <p class="meta" id="mana" style="margin:10px 0 0"></p>
+      <p class="meta" id="simmeta" style="margin:4px 0 0"></p>
+    </section>
+    <section class="panel duel-only" aria-labelledby="h-hand">
+      <h2 id="h-hand">Their hand</h2>
+      <div id="hand"></div>
+    </section>
+    <section class="panel on-only" aria-labelledby="h-next">
+      <h2 id="h-next">Their next draw</h2>
+      <div id="next"></div>
+    </section>
+    <section class="panel duel-only" aria-labelledby="h-ev">
+      <h2 id="h-ev">What they didn't do</h2>
+      <p class="hint" style="margin:0 0 10px">Each item lowers the odds of cards they could have paid for at that moment. Click one to stop counting it.</p>
+      <div class="chips" id="evidence"></div>
+    </section>
+  </section>
+
+  <section class="pane" id="pane-deck" role="tabpanel" aria-labelledby="tab-deck" hidden>
+    <section class="panel" aria-labelledby="h-guess">
+      <h2 id="h-guess">What they're playing</h2>
+      <div id="guess"></div>
+    </section>
+    <section class="panel">
+      <details id="d-deck"><summary>Opponent decklist</summary>
+        <fieldset class="modes">
+          <legend class="meta">Where their decklist comes from</legend>
+          <label class="toggle"><input type="radio" name="mode" value="guess" checked> Guess it from what they play</label>
+          <label class="toggle"><input type="radio" name="mode" value="list"> Use the list below</label>
+        </fieldset>
+        <p class="hint" style="margin-top:0">Paste a list with one card per line, like <code>4 Lightning Bolt</code>, or an Arena export. The sideboard is skipped. Cards they show that aren't in the list are added for this game.</p>
+        <textarea id="decktext" spellcheck="false"></textarea>
+        <div class="row" style="margin:8px 0 0"><button class="btn primary" data-a="loaddeck">Load list</button></div>
+      </details>
+    </section>
+  </section>
+
+  <section class="pane" id="pane-log" role="tabpanel" aria-labelledby="tab-log" hidden>
+    <section class="panel" aria-labelledby="h-log">
+      <h2 id="h-log">Game log</h2>
+      <ul class="log" id="log"></ul>
+    </section>
+  </section>
+
+  <section class="pane" id="pane-plays" role="tabpanel" aria-labelledby="tab-plays" hidden>
+    <section class="panel" aria-labelledby="h-plays">
+      <h2 id="h-plays">What the model would do</h2>
+      <div id="plays"></div>
+      <p class="hint">It ranks the plays Arena offers by how likely a player in its training games was to make them. It only suggests, and never touches Arena. It works against Arena's built-in bot and in replays, and stays locked in games against people.</p>
+    </section>
+  </section>
+
+  <section class="pane" id="pane-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+    <section class="panel" aria-labelledby="h-auto">
+      <h2 id="h-auto">"No response" evidence</h2>
+      <label class="toggle"><input type="checkbox" id="auto" checked> Use "no response" evidence</label>
+      <p class="hint" style="margin:-4px 0 12px">When your spell resolves or your attack connects while they have mana up and make no play, cards they could have paid for become less likely. Passing is sometimes a choice, so this is a judgment call.</p>
+      <div class="slider"><label for="strength">How sure they'd have used it</label><input type="range" id="strength" min="10" max="100" step="5" value="70"><output id="strength-out">70%</output></div>
+    </section>
+    <section class="panel" aria-labelledby="h-info">
+      <h2 id="h-info">About this log</h2>
+      <p class="meta" id="logpath" style="margin:0 0 8px;overflow-wrap:anywhere"></p>
+    </section>
+    <section class="panel prose">
+      <details id="d-how"><summary>How the odds are worked out</summary>
+        <p>The tool reads Arena's Player.log file on this computer. It uses what both players can see: their hand and library sizes, cards that have been public, and cards revealed to you. It doesn't use anything else in the log about their hidden cards.</p>
+        <p>With no decklist pasted, their deck is a mix of archetypes from recent tournament decklists, plus decks you've faced, with earlier games in the same match counting most. Every card they show shifts the mix toward decks that run it.</p>
+        <p>Each simulated deal draws a whole decklist from that mix, then deals their hand from it. The odds are the share of deals where each card lands in each spot.</p>
+        <p>A threat only counts if the mana they have open can pay its normal cost, and a board wipe counts if they could pay for it next turn with one more land. Alternate costs, convoke and cost reducers aren't modeled, and neither is the land mix players choose to keep in an opening hand.</p>
+      </details>
+    </section>
+  </section>
+</main>
+<footer class="foot"><span>MTG Arena Odds. Not affiliated with or endorsed by Wizards of the Coast. Card data from Scryfall.</span></footer>
+<div id="toast" hidden></div>
+<script src="mtg-cards.js"></script>
+<script src="mtg-decks.js"></script>
+<script src="odds.js"></script>
+<script src="panel.js"></script>
+</body>
+</html>

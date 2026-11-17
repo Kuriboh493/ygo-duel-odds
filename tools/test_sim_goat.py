@@ -137,6 +137,15 @@ def test_reckless_greed_skips_two_draws():
     g.apply(me, key(me, "Reckless Greed", "Activate ST"))
     check(me.obligations == [("draw", 2)] and me.skip_draw == 2, "Reckless Greed didn't owe two draws and skip two")
 
+def test_dekoichi_leaves_your_own_flip_summon_draw_to_you():
+    g, me, op = game(mon=["fd:Dekoichi the Battlechanted Locomotive"])
+    g.apply(me, key(me, "Dekoichi the Battlechanted Locomotive", "Flip Summon"))
+    check(me.obligations == [("draw", 1)] and not me.hand, "your own Flip Summon of Dekoichi didn't leave the draw to you")
+    check(S.legal(g, me, g.candidates(me)) == ["deck|Draw card"], "the owed draw isn't the only legal play")
+    g, me, op = game(mon=["Kuriboh"], op_mon=["fd:Dekoichi the Battlechanted Locomotive"], phase="BP")
+    g.apply(me, key(me, "Kuriboh", "Attack", op.mon[0]))
+    check(len(op.hand) == 1 and not op.obligations, "Dekoichi flipped in battle on your turn didn't draw for its owner")
+
 def test_night_assailant_discard_returns_a_flip_monster():
     g, me, op = game(hand=["Night Assailant"], gy=["Magician of Faith"])
     g.to_gy(me, me.hand[0])

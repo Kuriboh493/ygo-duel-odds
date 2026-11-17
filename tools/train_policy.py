@@ -19,9 +19,11 @@ the teacher's few noisy rollouts, soft targets taught the model to prefer safe p
 models trained on them won fewer games than ones trained on the teacher's pick alone. The "near-best" score
 reported on teacher data is how often the model's pick is one the teacher rated within 0.01 of its best.
 
-No extra packages are needed.
+--hidden N adds a small neural network on top (see tools/policy_mlp.py): one hidden layer of N units over the same
+features, so the model can learn how features combine. That needs numpy (python3 -m venv .venv && .venv/bin/pip
+install numpy, then run this with .venv/bin/python). Without --hidden no extra packages are needed.
 """
-import argparse, json, math, random, sys, time
+import argparse, json, math, os, random, sys, time
 from array import array
 from collections import Counter, defaultdict
 
@@ -169,17 +171,91 @@ def records(path):
             pos = end
             yield r
 
-def load(paths, vocab, temp=0.0, adv_scale=0.0):
-    """Reads every usable decision and encodes it straight away, keeping only what training needs."""
+def load(paths, vocab, temp=0.0, adv_scale=0.0, svocab=None):
+    """Reads every usable decision and encodes it straight away, keeping only what training needs.
+    With svocab, also keeps each decision's state features and game result, for --awr."""
     out = []
     for path in paths:
         for r in records(path):
             if isinstance(r, dict) and r.get("cands") and isinstance(r.get("chosen"), int) and 0 <= r["chosen"] < len(r["cands"]):
                 if r.get("cvals") and len(r["cvals"]) != len(r["cands"]): r.pop("cvals")
-                out.append({"duel": r.get("duel"), "chosen": r["chosen"], "plays": tuple(sys.intern(c["play"]) for c in r["cands"]),
-                            "soft": bool(r.get("cvals")), "enc": encode([r], vocab, temp, adv_scale)[0]})
+                d = {"duel": r.get("duel"), "chosen": r["chosen"], "plays": tuple(sys.intern(c["play"]) for c in r["cands"]),
+                     "soft": bool(r.get("cvals")), "enc": encode([r], vocab, temp, adv_scale)[0]}
+                if svocab is not None:
+                    d["won"] = r.get("won")
+                    d["state"] = array("I", sorted({svocab.id(f) for f in state_features(r)}))
+                out.append(d)
                 if len(out) % 50000 == 0: print(f"  read {len(out)} decisions", flush=True)
     return out
+
+# ---------- Advantage-weighted regression (--awr), for replays labelled with who won ----------
+# Offline reinforcement learning from games people played: a value model learns how likely the player to move
+# is to win from each position (logistic regression on the features below). Each decision's advantage is
+# then how the game actually went (won 1, lost 0) minus that expectation, and the decision is weighted by
+# exp(advantage / beta): plays from positions that turned out better than expected count for more, ones that
+# turned out worse for less. This is AWR (Peng et al., 2019) with the game result as the return. The value
+# for each decision comes from a model fit on the other half of the duels, so it can't just remember the result.
+def state_features(r):
+    me, opp = r.get("me") or {}, r.get("opp") or {}
+    mlp, olp = f_num(me.get("lp")) or 0, f_num(opp.get("lp")) or 0
+    out = ["bias", "ph:" + (r.get("phase") or "none"),
+           "mlp:" + f_bucket(mlp, [0, 1000, 2000, 4000, 6000, 8000]), "olp:" + f_bucket(olp, [0, 1000, 2000, 4000, 6000, 8000]),
+           "dlp:" + f_bucket(mlp - olp, [-99999, -4000, -2000, -500, 500, 2000, 4000]),
+           "h:" + str(min(len(me.get("hand") or []), 8)), "oh:" + str(min(f_num(opp.get("hand")) or 0, 8)),
+           "mm:" + str(len(me.get("mon") or [])), "om:" + str(len(opp.get("mon") or [])),
+           "ms:" + str(len(me.get("st") or [])), "os:" + str(len(opp.get("st") or [])),
+           "cards:" + f_bucket(len(me.get("hand") or []) + len(me.get("mon") or []) + len(me.get("st") or [])
+                               - (f_num(opp.get("hand")) or 0) - len(opp.get("mon") or []) - len(opp.get("st") or []), [-99, -4, -2, -1, 0, 1, 2, 4]),
+           "t:" + f_bucket(f_num(r.get("turn")) or 0, [0, 2, 4, 8, 14, 20]),
+           "dk:" + f_bucket(f_num(me.get("deck")) or 0, [0, 5, 10, 20, 30])]
+    for c in me.get("hand") or []:
+        if c.get("name"): out.append("hn:" + c["name"])
+    for c in me.get("mon") or []:
+        if c.get("name"): out.append("mn:" + c["name"])
+    for c in me.get("st") or []:
+        if c.get("name"): out.append("sn:" + c["name"])
+    for c in opp.get("mon") or []:
+        out.append("on:" + (c.get("name") or "set"))
+    return out
+
+def fit_value(data, size, epochs=4, lr=0.05, l2=1e-4, seed=7):
+    w, g2, rnd = [0.0] * size, [0.0] * size, random.Random(seed)
+    order = list(range(len(data)))
+    for _ in range(epochs):
+        rnd.shuffle(order)
+        for i in order:
+            fs, y = data[i]
+            z = sum(w[f] for f in fs)
+            p = 1 / (1 + math.exp(-max(-30, min(30, z))))
+            g = p - y
+            for f in fs:
+                gg = g + l2 * w[f]
+                g2[f] += gg * gg
+                w[f] -= lr * gg / (math.sqrt(g2[f]) + 1e-8)
+    return w
+
+def awr_weights(recs, size, beta, wmax, seed):
+    """Sets each decision's training weight from its advantage. Decisions without a known result keep weight 1."""
+    known = [r for r in recs if r.get("won") in (0, 1)]
+    if not known:
+        print("--awr: no decisions carry a game result (\"won\"), so all are weighted alike."); return
+    duels = sorted({r["duel"] for r in known}); random.Random(seed).shuffle(duels)
+    half = {d: i % 2 for i, d in enumerate(duels)}
+    vals = {}
+    for fold in (0, 1):
+        w = fit_value([(r["state"], r["won"]) for r in known if half[r["duel"]] != fold], size, seed=seed)
+        for i, r in enumerate(known):
+            if half[r["duel"]] == fold:
+                z = sum(w[f] for f in r["state"]); vals[id(r)] = 1 / (1 + math.exp(-max(-30, min(30, z))))
+    ll = sum(math.log(max(1e-9, vals[id(r)] if r["won"] else 1 - vals[id(r)])) for r in known) / len(known)
+    acc = sum((vals[id(r)] > 0.5) == bool(r["won"]) for r in known) / len(known)
+    ws = {id(r): min(wmax, math.exp((r["won"] - vals[id(r)]) / beta)) for r in known}
+    mean = sum(ws.values()) / len(ws)
+    for r in known:
+        e = r["enc"]; r["enc"] = (e[0], e[1], e[2], e[3], e[4] * ws[id(r)] / mean, e[5])
+    srt = sorted(v / mean for v in ws.values())
+    print(f"--awr: value model on held-out halves predicts the winner {acc:.1%} of the time (log-likelihood {ll:.3f}, coin flip -0.693). "
+          f"Decision weights: 10th percentile {srt[len(srt) // 10]:.2f}, median {srt[len(srt) // 2]:.2f}, 90th {srt[len(srt) * 9 // 10]:.2f}.")
 
 def split_by_duel(recs, share, seed):
     duels = sorted({r.get("duel") or "?" for r in recs})
@@ -231,6 +307,24 @@ def encode(recs, vocab, temp=0.0, adv_scale=0.0):
 def scores(w, d):
     flat, offs = d[0], d[1]
     return [sum(w[i] for i in flat[offs[j]:offs[j + 1]]) for j in range(len(offs) - 1)]
+
+def model_score(model, fs):
+    """A saved model's score for one candidate with features fs, and how many of them it knows. Pure Python, for
+    sim_goat.py; the same sum as scoreCandidates in extension/features.js."""
+    w = model["weights"]
+    known = [f for f in fs if f in w]
+    s = sum(w[f] for f in known)
+    mlp = model.get("mlp")
+    if mlp:
+        emb = mlp["emb"]
+        z = list(mlp["b"])
+        for f in fs:
+            e = emb.get(f)
+            if e is not None:
+                if f not in w: known.append(f)
+                for k, x in enumerate(e): z[k] += x
+        s += sum(v * x for v, x in zip(mlp["v"], z) if x > 0)
+    return s, len(known)
 
 def softmax(xs):
     m = max(xs)
@@ -308,21 +402,44 @@ def main():
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--soft-temp", type=float, default=0.0, help="temperature for soft targets from teacher values (try 0.05); 0, the default, trains on the chosen play only")
     ap.add_argument("--adv-scale", type=float, default=0.0, help="a decision counts in full once its best play beats the next by this much (try 0.1); 0, the default, weights all alike")
+    ap.add_argument("--awr", type=float, default=0.0, metavar="BETA", help="weight decisions from replays by how much better than expected the game went "
+                    "(advantage-weighted regression; try 0.5, smaller trusts results more); 0, the default, weights all alike")
+    ap.add_argument("--awr-max", type=float, default=5.0, help="cap on one decision's --awr weight")
+    ap.add_argument("--hidden", type=int, default=0, metavar="N", help="add a hidden layer of N units (try 32); needs numpy. 0, the default, trains the linear model only")
+    ap.add_argument("--hidden-lr", type=float, default=0.03, help="AdaGrad learning rate for the hidden layer")
+    ap.add_argument("--min-count", type=int, default=20, help="features in fewer training decisions than this get no hidden-layer embedding")
+    ap.add_argument("--batch", type=int, default=32, help="decisions per mini-batch with --hidden")
+    ap.add_argument("--score", nargs="+", metavar="MODEL", help="don't train: report how often each of these models picks the chosen play on the "
+                    "held-out duels (the same split training uses), e.g. to compare models on replays of people's games")
     a = ap.parse_args()
 
     vocab = Vocab()
-    recs = load(a.data, vocab, a.soft_temp, a.adv_scale)
+    svocab = Vocab() if a.awr else None
+    recs = load(a.data, vocab, a.soft_temp, a.adv_scale, svocab)
     if not recs:
         sys.exit("No usable decisions in those files. Record some plays first.")
     duels = len({r.get("duel") for r in recs})
     soft = sum(r["soft"] for r in recs)
     print(f"{len(recs)} decisions from {duels} duels, {sum(len(r['plays']) for r in recs) / len(recs):.1f} plays to choose from on average"
           + (f"; {soft} carry teacher values" if soft else ""))
+    if a.awr: awr_weights(recs, len(svocab.names), a.awr, a.awr_max, a.seed)
     tr, te = split_by_duel(recs, a.holdout, a.seed)
     if not te:
         print("Only one duel recorded, so there's nothing to test on. Record more duels for a real score.")
     tr_d, te_d = [r["enc"] for r in tr], [r["enc"] for r in te]
+    if a.score:
+        for path in a.score:
+            mj = json.load(open(path, encoding="utf-8"))
+            if mj.get("mlp"):
+                import policy_mlp
+                m = policy_mlp.from_json(mj, vocab.names).evaluate(policy_mlp.Data(te_d or tr_d))
+            else:
+                m = evaluate([mj["weights"].get(f, 0.0) for f in vocab.names], te_d or tr_d)
+            print(f"{path}: picks the chosen play {m['top1']:.1%} of the time, has it in its top 3 {m['top3']:.1%}, log-likelihood {m['loglik']:.3f}")
+        return
     print(f"Training on {len(tr)} decisions, testing on {len(te)} from duels it never sees.")
+    if a.hidden:
+        return main_hidden(a, vocab, recs, tr, te, tr_d, te_d, duels)
     w, best_ep = train(tr_d, te_d, len(vocab.names), a.epochs, a.lr, a.l2, a.seed)
     m = evaluate(w, te_d) if te_d else evaluate(w, tr_d)
     if te:
@@ -335,7 +452,7 @@ def main():
     w = dict(zip(vocab.names, w))
     weights = {f: round(v, 4) for f, v in w.items() if abs(v) >= 1e-3}
     model = {"kind": "ygo-duel-odds-policy", "featuresVersion": FEATURES_VERSION, "trained": time.strftime("%Y-%m-%d %H:%M"),
-             "decisions": len(recs), "duels": duels, "heldOut": m if te else None, "weights": weights}
+             "decisions": len(recs), "duels": duels, "heldOut": m if te else None, "sources": sorted({os.path.basename(x) for x in a.data}), "awr": a.awr or None, "weights": weights}
     with open(a.out, "w", encoding="utf-8") as f:
         json.dump(model, f, separators=(",", ":"))
     top = sorted(weights.items(), key=lambda kv: -abs(kv[1]))[:12]
@@ -343,6 +460,35 @@ def main():
     for f, v in top:
         print(f"  {v:+.2f}  {f}")
     print(f"\nWrote {a.out} ({len(weights)} weights). Load it in the panel's Auto tab with \"Load a trained model\".")
+
+def main_hidden(a, vocab, recs, tr, te, tr_d, te_d, duels):
+    import policy_mlp
+    for r in recs: r.pop("enc", None)  # the packed arrays below replace the per-decision ones
+    dtr, dte = policy_mlp.Data(tr_d), policy_mlp.Data(te_d)
+    del tr_d[:], te_d[:]
+    size = len(vocab.names)
+    counts = policy_mlp.feature_counts(dtr, size)
+    model = policy_mlp.Model(size, a.hidden, counts, a.min_count, a.seed)
+    print(f"Hidden layer of {a.hidden} units; {len(model.E)} of {size} features get an embedding (seen in {a.min_count}+ training candidates).", flush=True)
+    best_ep = policy_mlp.train(model, dtr, dte if te else None, a.epochs, a.lr, a.hidden_lr, a.l2, a.batch, a.seed)
+    m = model.evaluate(dte if te else dtr)
+    if te:
+        rand, common = baselines(tr, te)
+        print(f"\nOn held-out duels: picks your play {m['top1']:.1%} of the time, one of the teacher's best {m['near']:.1%}, and has it in its top 3 {m['top3']:.1%} of the time.")
+        print(f"For comparison: picking at random gets {rand:.1%}, and picking the most common kind of play gets {common:.1%}.")
+    print(f"\nRefitting on all decisions for {best_ep} epochs for the final model...")
+    dall = dtr + dte if te else dtr
+    del dtr, dte
+    model = policy_mlp.Model(size, a.hidden, policy_mlp.feature_counts(dall, size), a.min_count, a.seed)
+    policy_mlp.train(model, dall, None, best_ep, a.lr, a.hidden_lr, a.l2, a.batch, a.seed)
+    weights, mlp = policy_mlp.export(model, vocab.names)
+    out = {"kind": "ygo-duel-odds-policy", "featuresVersion": FEATURES_VERSION, "trained": time.strftime("%Y-%m-%d %H:%M"),
+           "decisions": len(recs), "duels": duels, "heldOut": m if te else None, "sources": sorted({os.path.basename(x) for x in a.data}),
+           "awr": a.awr or None, "hidden": a.hidden, "weights": weights, "mlp": mlp}
+    with open(a.out, "w", encoding="utf-8") as f:
+        json.dump(out, f, separators=(",", ":"))
+    print(f"\nWrote {a.out} ({len(weights)} weights, {len(mlp['emb'])} embeddings of {a.hidden}, {os.path.getsize(a.out) / 1e6:.1f} MB). "
+          f"Load it in the panel's Auto tab with \"Load a trained model\".")
 
 if __name__ == "__main__":
     main()

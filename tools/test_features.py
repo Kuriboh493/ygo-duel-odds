@@ -5,7 +5,8 @@ Runs the JavaScript copy with macOS's built-in JavaScript engine (osascript), so
 """
 import json, os, subprocess, sys, tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from train_policy import featurize
+import random
+from train_policy import featurize, model_score
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 mon = lambda n, atk, d, pos="ATK", lvl=4: {"name": n, "ctype": "Monster", "zone": "monster", "pos": pos, "atk": atk, "def": d, "level": lvl}
@@ -39,16 +40,26 @@ FIXTURES = [
      ], "chosen": 4},
 ]
 
-def js_features():
-    js = open(os.path.join(ROOT, "extension", "features.js"), encoding="utf-8").read()
+def test_model():
+    """A model with a hidden layer over the fixtures' features: some features get only a weight, some only an
+    embedding, some both, so scoreCandidates and model_score are checked on every case."""
+    rnd = random.Random(3)
+    feats = sorted({f for r in FIXTURES for c in r["cands"] for f in featurize(r, c)})
+    H = 4
+    w = {f: round(rnd.uniform(-1, 1), 3) for f in feats if rnd.random() < 0.7}
+    emb = {f: [round(rnd.uniform(-1, 1), 3) for _ in range(H)] for f in feats if rnd.random() < 0.5}
+    return {"weights": w, "mlp": {"dim": H, "b": [0.1, -0.2, 0.3, 0.0], "v": [0.5, -1.0, 0.25, 2.0], "emb": emb}}
+
+def js_run(model):
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
-        json.dump(FIXTURES, f); path = f.name
+        json.dump({"recs": FIXTURES, "model": model}, f); path = f.name
     script = f"""
 ObjC.import('Foundation');
 const read = p => $.NSString.stringWithContentsOfFileEncodingError(p, 4, null).js;
-eval(read({json.dumps(os.path.join(ROOT, 'extension', 'features.js'))}) + "; this.featurize = featurize;");
-const recs = JSON.parse(read({json.dumps(path)}));
-JSON.stringify(recs.map(r => r.cands.map(c => featurize(r, c))));
+eval(read({json.dumps(os.path.join(ROOT, 'extension', 'features.js'))}) + "; this.featurize = featurize; this.scoreCandidates = scoreCandidates;");
+const inp = JSON.parse(read({json.dumps(path)}));
+JSON.stringify({{feats: inp.recs.map(r => r.cands.map(c => featurize(r, c))),
+                scores: inp.recs.map(r => scoreCandidates(inp.model, r).sort((a, b) => a.i - b.i).map(x => [x.score, x.known]))}});
 """
     out = subprocess.run(["osascript", "-l", "JavaScript", "-e", script], capture_output=True, text=True)
     os.unlink(path)
@@ -57,7 +68,9 @@ JSON.stringify(recs.map(r => r.cands.map(c => featurize(r, c))));
     return json.loads(out.stdout)
 
 def main():
-    js = js_features()
+    model = test_model()
+    out = js_run(model)
+    js = out["feats"]
     py = [[featurize(r, c) for c in r["cands"]] for r in FIXTURES]
     bad = 0
     for ri, (a, b) in enumerate(zip(js, py)):
@@ -67,7 +80,16 @@ def main():
                 print(f"record {ri}, candidate {ci} differs:\n  only in JS:     {sorted(set(fa) - set(fb))}\n  only in Python: {sorted(set(fb) - set(fa))}\n  order same: {fa == fb}")
     n = sum(len(x) for x in py)
     print(f"{n - bad} of {n} candidates match." if bad else f"All {n} candidates have identical features in JavaScript and Python.")
-    sys.exit(1 if bad else 0)
+    sbad = 0
+    for ri, r in enumerate(FIXTURES):
+        for ci, c in enumerate(r["cands"]):
+            ps, pk = model_score(model, featurize(r, c))
+            js_s, js_k = out["scores"][ri][ci]
+            if abs(ps - js_s) > 1e-9 or pk != js_k:
+                sbad += 1
+                print(f"record {ri}, candidate {ci}: Python scores {ps:.6f} ({pk} known), JavaScript {js_s:.6f} ({js_k} known)")
+    print(f"{n - sbad} of {n} candidate scores match." if sbad else f"All {n} candidates score the same in JavaScript and Python with a hidden-layer model.")
+    sys.exit(1 if bad or sbad else 0)
 
 if __name__ == "__main__":
     main()

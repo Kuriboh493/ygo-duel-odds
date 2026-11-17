@@ -1,0 +1,8 @@
+/* What the MTG Arena panel adds to extension/panel.css. A wide browser tab gets one column of the side panel's width. */
+body{max-width:560px;margin:0 auto}
+.t-L{--tc:var(--trp)}
+.t-C{--tc:var(--mon)}
+.t-I,.t-S,.t-P,.t-B,.t-A,.t-E,.t-U{--tc:var(--spl)}
+.t-L .pip,.t-C .pip,.t-I .pip,.t-S .pip,.t-P .pip,.t-B .pip,.t-A .pip,.t-E .pip,.t-U .pip{background:var(--tc)}
+.cand.t-L .bar i,.cand.t-C .bar i,.cand.t-I .bar i,.cand.t-S .bar i,.cand.t-P .bar i,.cand.t-B .bar i,.cand.t-A .bar i,.cand.t-E .bar i,.cand.t-U .bar i{background:var(--tc)}
+.chip.ignored{opacity:.55;text-decoration:line-through}
